@@ -98,14 +98,14 @@ The material has been generated mainly by **Roland Potthast**, with contribution
 
 - Stefanie Hollborn
 - Jan Keller
-- Thomas Deppisch
-- Mareike Burba
-- Matthias Mages
-- Sarah Heibutzki
 - Marek Jacob
 - Florian Prill
 - Tobias Göcke
 - Felix Fundel
+- Thomas Deppisch
+- Mareike Burba
+- Matthias Mages
+- Sarah Heibutzki
 
 ---
 
