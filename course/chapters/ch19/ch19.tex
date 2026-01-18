@@ -1,0 +1,1703 @@
+%!TEX root = ../../e-ai_ML2.tex
+\chapter{AI and Physics and Data}
+
+
+%==============================================================================
+\section{Physics-Informed Neural Networks (PINNs)}
+%==============================================================================
+
+%------------------------------------------------------------------------------
+\subsection{Motivation and core idea}
+%------------------------------------------------------------------------------
+
+Physics-Informed Neural Networks (PINNs) provide a way to use neural networks
+as \emph{continuous function approximators} while enforcing physical constraints
+through the loss function.
+The key difference to classical machine learning is that PINNs can learn
+without labelled target data by minimizing violations of known governing equations.
+
+The unifying viewpoint is:
+\[
+\text{state evolution must be consistent with } \dot{\mathbf{x}} = \mathbf{f}(\mathbf{x}).
+\]
+
+PINNs enforce this consistency by combining:
+\begin{itemize}
+  \item equation residual constraints (ODE/PDE),
+  \item boundary and initial conditions (anchors),
+  \item optionally additional physical constraints (e.g. conservation, symmetry).
+\end{itemize}
+
+\noindent
+In practice, PINNs are trained by evaluating the governing equations at
+\emph{collocation points} $x_i$ in the domain.
+This means that the ``training data'' is not labelled output pairs $(x,y)$,
+but instead the physics residual $r(x)$ computed from the neural network via
+automatic differentiation.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\textwidth]{images/img19/pinn_sine_1.png}
+\caption{PINN example for $y''(x)+y(x)=0$: neural approximation of the sine solution during training.}
+\label{fig:lec19_pinn_sine_1}
+\end{figure}
+%------------------------------------------------------------------------------
+
+
+%------------------------------------------------------------------------------
+\subsection{A minimal PINN example: the sine ODE}
+%------------------------------------------------------------------------------
+
+A minimal example is the second-order ODE
+\[
+y''(x) + y(x) = 0,
+\]
+with boundary conditions
+\[
+y(0)=0,\qquad y'(0)=1.
+\]
+The unique solution is $y(x)=\sin(x)$.
+
+The PINN approach represents the solution by a neural network $y_\theta(x)$
+and trains it by minimizing:
+\begin{itemize}
+  \item the ODE residual at collocation points,
+  \item the boundary-condition mismatch at anchor points.
+\end{itemize}
+
+\noindent
+The model is a standard MLP $x\mapsto y_\theta(x)$ with $\tanh$ activations.
+All derivatives required by the physics loss are obtained by autograd.
+
+\vspace{2mm}
+\begin{codeonly}{PINN setup: neural ansatz, derivatives, sampling}
+# PINN: learn y(x)=sin(x) from ODE y'' + y = 0 with BC y(0)=0, y'(0)=1
+import torch
+import torch.nn as nn
+import matplotlib.pyplot as plt
+import math
+
+torch.manual_seed(0)
+
+# device selection (CUDA MPS CPU)
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
+
+# neural ansatz: MLP for y(x)
+class MLP(nn.Module):
+    def __init__(self, width=64, depth=4):
+        super().__init__()
+        layers = [nn.Linear(1, width), nn.Tanh()]
+        for _ in range(depth - 1):
+            layers += [nn.Linear(width, width), nn.Tanh()]
+        layers += [nn.Linear(width, 1)]
+        self.net = nn.Sequential(*layers)
+        for m in self.net:   # Xavier init
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def forward(self, x):
+        return self.net(x)
+
+model = MLP(width=64, depth=4).to(device)
+
+# autograd helper: y', y''
+def derivatives(y, x):
+    dy = torch.autograd.grad(y, x, grad_outputs=torch.ones_like(y),
+                             create_graph=True)[0]
+    d2y = torch.autograd.grad(dy, x, grad_outputs=torch.ones_like(dy),
+                              create_graph=True)[0]
+    return dy, d2y
+
+# training domain and collocation points
+x_min, x_max = 0.0, 2.0 * math.pi
+N_col = 256
+
+def sample_collocation(n):
+    x = x_min + (x_max - x_min) * torch.rand(n, 1, device=device)
+    x.requires_grad_(True)
+    return x
+
+# boundary anchor point (x=0) for y(0)=0 and y'(0)=1
+x0 = torch.tensor([[0.0]], device=device, requires_grad=True)
+\end{codeonly}
+\vspace{2mm}
+
+
+%------------------------------------------------------------------------------
+\subsection{PINN loss formulation}
+%------------------------------------------------------------------------------
+
+Using automatic differentiation, we evaluate
+$y_\theta'(x)$ and $y_\theta''(x)$.
+The residual is
+\[
+r(x) = y_\theta''(x) + y_\theta(x).
+\]
+A typical residual loss is
+\[
+\mathcal{L}_{\text{ODE}}
+=
+\frac{1}{N}\sum_{i=1}^N
+\Bigl(y_\theta''(x_i) + y_\theta(x_i)\Bigr)^2 .
+\]
+
+Boundary conditions enforce uniqueness:
+\[
+\mathcal{L}_{\text{BC}}
+=
+\bigl( y_\theta(0) \bigr)^2
++
+\bigl( y_\theta'(0) - 1 \bigr)^2.
+\]
+
+The total PINN loss reads
+\[
+\mathcal{L}
+=
+\mathcal{L}_{\text{ODE}}
++
+\lambda\,\mathcal{L}_{\text{BC}}.
+\]
+
+\noindent
+\textbf{Important:}
+No data term appears in this objective; learning is driven by physics constraints.
+
+\noindent
+The training loop therefore looks very similar to standard deep learning,
+but the loss is constructed from physics residuals and anchor constraints:
+
+\vspace{2mm}
+\begin{codeonly}{Training loop: minimize ODE residual + boundary anchors}
+opt = torch.optim.Adam(model.parameters(), lr=2e-3)
+
+w_ode = 1.0
+w_bc  = 10.0   # emphasize boundary constraints to fix the unique solution
+
+for ep in range(1, 4001):
+    opt.zero_grad()
+
+    # --- ODE residual on collocation points
+    x = sample_collocation(N_col)
+    y = model(x)
+    dy, d2y = derivatives(y, x)
+    r = d2y + y
+    loss_ode = torch.mean(r**2)
+
+    # --- boundary conditions at x=0
+    y0 = model(x0)
+    dy0, _ = derivatives(y0, x0)
+    loss_bc = (y0**2).mean() + ((dy0 - 1.0)**2).mean()
+
+    loss = w_ode * loss_ode + w_bc * loss_bc
+    loss.backward()
+    opt.step()
+
+    if ep % 400 == 0 or ep == 1:
+        print(f"ep {ep:4d} | total={loss.item():.3e} "
+              f"| ode={loss_ode.item():.3e} | bc={loss_bc.item():.3e}")
+\end{codeonly}
+\vspace{2mm}
+
+After training, we evaluate the learned function $y_\theta(x)$ and compare it
+to the analytic solution $\sin(x)$:
+
+\vspace{2mm}
+\begin{codeonly}{Evaluation on the core domain and figure export}
+model.eval()
+
+xx = torch.linspace(x_min, x_max, 500, device=device).view(-1, 1)
+with torch.no_grad():
+    yy = model(xx)
+
+xx_cpu = xx.cpu().numpy().reshape(-1)
+yy_cpu = yy.cpu().numpy().reshape(-1)
+true   = torch.sin(xx).cpu().numpy().reshape(-1)
+
+plt.figure()
+plt.plot(xx_cpu, true, label="true sin(x)")
+plt.plot(xx_cpu, yy_cpu, "--", label="PINN")
+plt.legend()
+plt.xlabel("x")
+plt.ylabel("y")
+plt.title("PINN solution of y'' + y = 0 with y(0)=0, y'(0)=1")
+plt.savefig("pinn_sine_1.png")
+plt.show()
+\end{codeonly}
+\vspace{2mm}
+
+
+%------------------------------------------------------------------------------
+\subsection{Extrapolation: testing outside the residual-sampling domain}
+%------------------------------------------------------------------------------
+
+A key strength (and challenge) of PINNs is extrapolation:
+models are often trained on a finite region but then evaluated outside.
+
+However, extrapolation is not guaranteed.
+Even if the differential equation is correct, the network is only constrained
+where we \emph{sample the residual}.
+Outside the sampled region, the model may drift because the loss provides no
+explicit penalty there.
+
+We therefore distinguish:
+\begin{itemize}
+  \item the \textbf{core domain} where the solution is anchored and strongly constrained,
+  \item the \textbf{residual-sampled domain} where physics is enforced,
+  \item the \textbf{outside domain} where only the inductive bias of the NN remains.
+\end{itemize}
+
+\vspace{2mm}
+\begin{codeonly}{EVALUATION: test beyond the residual-sampling domain}
+# ------------------------------------------------------------
+# EVALUATION: test beyond the residual-sampling domain
+# ------------------------------------------------------------
+import matplotlib.pyplot as plt
+
+model.eval()
+
+# test domain larger than training-sampling domain
+x_test_min = -4.0 * math.pi
+x_test_max =  6.0 * math.pi
+
+xx = torch.linspace(x_test_min, x_test_max, 1600, device=device).view(-1, 1)
+xx.requires_grad_(True)
+
+y_pred = model(xx)
+y_true = torch.sin(xx)
+
+# absolute error
+err = (y_pred - y_true).abs()
+
+# move to CPU
+xx_cpu   = xx.detach().cpu().numpy().reshape(-1)
+y_pred_c = y_pred.detach().cpu().numpy().reshape(-1)
+y_true_c = y_true.detach().cpu().numpy().reshape(-1)
+err_c    = err.detach().cpu().numpy().reshape(-1)
+
+# ------------------------------------------------------------
+# plots: solution + error
+# ------------------------------------------------------------
+plt.figure(figsize=(10, 4))
+plt.plot(xx_cpu, y_true_c, label="true sin(x)")
+plt.plot(xx_cpu, y_pred_c, "--", label="PINN")
+plt.axvspan(-2*math.pi, 4*math.pi, color="gray", alpha=0.15, label="residual-sampled")
+plt.axvspan(0, 2*math.pi, color="blue", alpha=0.08, label="core domain")
+plt.legend()
+plt.xlabel("x")
+plt.ylabel("y")
+plt.title("PINN extrapolation beyond residual-sampling domain")
+plt.savefig("pinn_sine_3.png")
+plt.show()
+
+plt.figure(figsize=(10, 4))
+plt.semilogy(xx_cpu, err_c + 1e-12)
+plt.axvspan(-2*math.pi, 4*math.pi, color="gray", alpha=0.15)
+plt.xlabel("x")
+plt.ylabel("|error|")
+plt.title("Absolute error (log scale)")
+plt.show()
+
+# ------------------------------------------------------------
+# quantitative summary
+# ------------------------------------------------------------
+inside = (xx_cpu >= x_col_min) & (xx_cpu <= x_col_max)
+outside = ~inside
+
+print("Mean absolute error:")
+print(f"  inside residual-sampled domain : {err_c[inside].mean():.3e}")
+print(f"  outside residual-sampled domain: {err_c[outside].mean():.3e}")
+\end{codeonly}
+\vspace{2mm}
+
+\noindent
+Figure~\ref{fig:lec19_pinn_sine_3} illustrates the typical behavior:
+within the sampled region the solution is accurate, while errors may grow
+outside. This is not a failure of the physics equation, but a consequence of
+how the PINN loss is enforced only at sampled points.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/pinn_sine_3.png}
+\caption{PINN extrapolation test: evaluation on a wider domain than the residual sampling region.
+The network matches $\sin(x)$ well where the ODE residual was enforced, but may drift outside.}
+\label{fig:lec19_pinn_sine_3}
+\end{figure}
+%------------------------------------------------------------------------------
+
+
+%------------------------------------------------------------------------------
+\subsection{Representation choices: Fourier features}
+%------------------------------------------------------------------------------
+
+A second major lesson is that \textbf{representation matters}.
+Standard MLPs are biased toward smooth/low-frequency functions.
+Oscillatory solutions are often better represented using Fourier features.
+
+A Fourier embedding maps $x$ into periodic features
+\[
+x \mapsto \bigl(\sin(\omega_k x),\cos(\omega_k x)\bigr)_{k=1}^m,
+\]
+which makes oscillatory structure easier to represent.
+Importantly, the physics loss stays unchanged; only the neural parameterization
+of the function changes.
+
+Here, this is demonstrated by a PINN variant that keeps the training
+domain fixed to $[0,2\pi]$ but replaces the raw input $x$ by Fourier features.
+
+\vspace{2mm}
+\begin{codeonly}{PINN with Fourier Features: oscillatory representation bias}
+# ------------------------------------------------------------
+# PINN with Fourier Features: learn y(x)=sin(x) from y''+y=0 and BC y(0)=0, y'(0)=1
+# (Fourier features = input embedding; no sampling outside, no PBCs)
+# ------------------------------------------------------------
+import torch
+import torch.nn as nn
+import matplotlib.pyplot as plt
+import math
+
+torch.manual_seed(0)
+
+# device selection
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
+
+# ------------------------------------------------------------
+# Fourier feature embedding + small MLP
+# ------------------------------------------------------------
+class FourierMLP(nn.Module):
+    def __init__(self, m=16, max_freq=16.0, width=64, depth=3):
+        super().__init__()
+        omegas = torch.linspace(1.0, max_freq, m).view(1, m)
+        self.register_buffer("omegas", omegas)
+        in_dim = 2 * m
+
+        layers = [nn.Linear(in_dim, width), nn.Tanh()]
+        for _ in range(depth - 1):
+            layers += [nn.Linear(width, width), nn.Tanh()]
+        layers += [nn.Linear(width, 1)]
+        self.net = nn.Sequential(*layers)
+
+        for mod in self.net:
+            if isinstance(mod, nn.Linear):
+                nn.init.xavier_normal_(mod.weight)
+                nn.init.zeros_(mod.bias)
+
+    def features(self, x):
+        z = x @ self.omegas
+        return torch.cat([torch.sin(z), torch.cos(z)], dim=1)
+
+    def forward(self, x):
+        return self.net(self.features(x))
+
+model = FourierMLP(m=16, max_freq=16.0, width=64, depth=3).to(device)
+\end{codeonly}
+\vspace{2mm}
+
+\noindent
+The training procedure is the same as above (ODE residual + boundary anchors),
+but now the network has an inductive bias toward periodic functions.
+Even without expanding the sampling region, this often leads to much better
+generalization beyond the training interval.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\textwidth]{images/img19/pinn_sine_4.png}
+\caption{PINN with Fourier features: the oscillatory embedding improves representation of $\sin(x)$ and supports better extrapolation outside $[0,2\pi]$.}
+\label{fig:lec19_pinn_sine_4}
+\end{figure}
+%------------------------------------------------------------------------------
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.78\textwidth]{images/img19/pinn_sine_cosine.png}
+\caption{Fourier-type representation (sine/cosine features) improves representation of oscillatory solutions and supports extrapolation.}
+\label{fig:lec19_pinn_sine_cosine}
+\end{figure}
+%------------------------------------------------------------------------------
+
+\noindent
+\textbf{Take-home message:}
+PINNs are not automatically robust extrapolators.
+Their behavior depends strongly on (i) the residual-sampling strategy and
+(ii) the representational bias of the neural network.
+Fourier features provide a simple yet powerful improvement for oscillatory
+problems.
+
+
+%==============================================================================
+\section{Discovering Governing Equations from Data (SINDy)}
+%==============================================================================
+
+%------------------------------------------------------------------------------
+\subsection{Goal: equations from time series}
+%------------------------------------------------------------------------------
+
+In contrast to PINNs, SINDy focuses on \emph{discovering} governing equations
+directly from observational data.
+Assume a dynamical system
+\[
+\dot{\mathbf{x}}(t)=\mathbf{f}(\mathbf{x}(t)), \qquad \mathbf{x}(t)\in\mathbb{R}^n,
+\]
+and observe time series $\mathbf{x}(t_i)$.
+
+The goal is to learn a functional form for $\mathbf{f}$ that is:
+\begin{itemize}
+  \item \textbf{predictive} (reproduces dynamics),
+  \item \textbf{interpretable} (explicit equation structure),
+  \item \textbf{parsimonious} (few relevant terms).
+\end{itemize}
+
+The key assumption behind SINDy is \textbf{sparsity}:
+$\mathbf{f}$ can be expressed as a sparse combination of candidate functions.
+This connects SINDy to classical system identification, regression,
+and model selection techniques, and it remains one of the most successful
+approaches for interpretable equation discovery.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/SINDy_01.png}
+\caption{SINDy principle: construct a candidate function library and identify a sparse set of active terms by sparse regression.}
+\label{fig:lec19_sindy_01}
+\end{figure}
+%------------------------------------------------------------------------------
+
+
+%------------------------------------------------------------------------------
+\subsection{Function library and sparse regression}
+%------------------------------------------------------------------------------
+
+SINDy builds a library of candidate nonlinear terms
+\[
+\Theta(\mathbf{x})
+=
+\bigl[1, x_1, \dots, x_n, x_1x_2, x_1^2, \dots \bigr],
+\]
+and assumes
+\[
+\dot{\mathbf{x}}
+\approx
+\Theta(\mathbf{x})\,\Xi,
+\]
+where $\Xi$ is sparse.
+
+In this view, equation discovery becomes a \textbf{sparse regression problem}:
+find coefficients $\Xi$ such that only a few basis functions are active.
+A standard least-squares fit gives a dense solution,
+therefore sparsity is enforced by thresholding, $\ell_1$ penalties, or
+sequential refitting (``sparsify then refit'').
+
+A minimal sequential thresholding scheme is:
+\begin{enumerate}
+  \item solve a dense regression $\Xi=\arg\min\|\Theta\Xi-\dot{\mathbf{x}}\|^2$,
+  \item set small coefficients to zero,
+  \item refit only on remaining terms, repeat.
+\end{enumerate}
+
+\noindent
+\textbf{Interpretability benefit:}
+The output is an explicit sparse equation structure rather than a black box model.
+This is a strong advantage in scientific applications, where we often
+need mechanistic understanding in addition to predictive power.
+
+\vspace{2mm}
+\begin{codeonly}{SINDy core step: candidate library and sparse regression}
+# ------------------------------------------------------------
+# Phase 2: SINDy REGRESSION (this is where Xi is computed)
+# ------------------------------------------------------------
+x, y, z = X.T
+
+Theta = np.column_stack([
+    np.ones_like(x),
+    x, y, z,
+    x * y,
+    x * z,
+    y * z
+])
+
+feature_names = ["1", "x", "y", "z", "x*y", "x*z", "y*z"]
+
+def sindy(Theta, dXdt, lam=0.1, n_iter=10):
+    # ---- REGRESSION #1 (dense)
+    Xi = np.linalg.lstsq(Theta, dXdt, rcond=None)[0]
+
+    for _ in range(n_iter):
+        small = np.abs(Xi) < lam
+        Xi[small] = 0.0
+
+        # ---- REGRESSION #2 (sparse refit)
+        for i in range(dXdt.shape[1]):
+            big = ~small[:, i]
+            Xi[big, i] = np.linalg.lstsq(
+                Theta[:, big], dXdt[:, i], rcond=None
+            )[0]
+    return Xi
+\end{codeonly}
+\vspace{2mm}
+
+
+%------------------------------------------------------------------------------
+\subsection{Example: Lorenz--63 from trajectory data}
+%------------------------------------------------------------------------------
+
+A classical benchmark for equation discovery is the Lorenz--63 system:
+\[
+\begin{aligned}
+\dot{x} &= \sigma (y-x),\\
+\dot{y} &= x(\rho-z)-y,\\
+\dot{z} &= xy-\beta z.
+\end{aligned}
+\]
+Here $\sigma$, $\rho$, and $\beta$ are parameters and the dynamics is chaotic.
+
+A typical workflow for SINDy is:
+\begin{enumerate}
+  \item generate (or observe) trajectory data $\mathbf{x}(t_i)$,
+  \item estimate time derivatives $\dot{\mathbf{x}}(t_i)$,
+  \item build the library $\Theta(\mathbf{x})$,
+  \item compute sparse coefficients $\Xi$,
+  \item integrate the discovered system and compare.
+\end{enumerate}
+
+For Lorenz--63, SINDy can recover the correct active terms from trajectory data
+\emph{if the derivatives are sufficiently accurate}.
+This highlights an important point: classical system identification methods
+can be extremely powerful---but they critically depend on the quality of
+numerical differentiation and conditioning of the regression problem.
+
+\vspace{2mm}
+\begin{codeonly}{SINDy Lorenz-63: generate trajectory, discover equations, compare}
+# ------------------------------------------------------------
+# Phase 1: Generate Lorenz-63 data
+# ------------------------------------------------------------
+sigma = 10.0
+rho   = 28.0
+beta  = 8.0 / 3.0
+
+def lorenz63_true(t, X):
+    x, y, z = X
+    return [
+        sigma * (y - x),
+        x * (rho - z) - y,
+        x * y - beta * z
+    ]
+
+t_span = (0.0, 25.0)
+t_eval = np.linspace(*t_span, 5000)
+x0 = [1.0, 1.0, 1.0]
+
+sol = solve_ivp(lorenz63_true, t_span, x0, t_eval=t_eval)
+X = sol.y.T
+dt = t_eval[1] - t_eval[0]
+
+# Numerical derivatives
+dXdt = np.gradient(X, dt, axis=0)
+
+# ------------------------------------------------------------
+# Phase 2: SINDy regression -> Xi
+# ------------------------------------------------------------
+Xi = sindy(Theta, dXdt)
+
+# ------------------------------------------------------------
+# Phase 3: Integrate discovered system and compare
+# ------------------------------------------------------------
+Xi_sindy = Xi.copy()
+
+def lorenz63_sindy(t, X):
+    x, y, z = X
+    Theta_vec = np.array([1.0, x, y, z, x*y, x*z, y*z])
+    return (Theta_vec @ Xi_sindy).tolist()
+
+sol_true  = solve_ivp(lorenz63_true,  (0.0, 30.0), x0, t_eval=np.linspace(0, 30, 6000))
+sol_sindy = solve_ivp(lorenz63_sindy, (0.0, 30.0), x0, t_eval=np.linspace(0, 30, 6000))
+
+# Save comparison figure
+plt.figure(figsize=(12, 5))
+ax1 = plt.subplot(121, projection="3d")
+ax1.plot(sol_true.y[0], sol_true.y[1], sol_true.y[2], lw=0.6)
+ax1.set_title("True Lorenz-63")
+
+ax2 = plt.subplot(122, projection="3d")
+ax2.plot(sol_sindy.y[0], sol_sindy.y[1], sol_sindy.y[2], lw=0.6)
+ax2.set_title("SINDy-discovered Lorenz-63")
+
+plt.tight_layout()
+plt.savefig("SINDy_01.png", dpi=200)
+plt.show()
+\end{codeonly}
+\vspace{2mm}
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/sindy_lorenz63.png}
+\caption{SINDy applied to Lorenz--63: recovering the active nonlinear terms in the governing equations from (noisy) trajectory data and comparing discovered and true trajectories.}
+\label{fig:lec19_sindy_lorenz63}
+\end{figure}
+%------------------------------------------------------------------------------
+
+
+
+%------------------------------------------------------------------------------
+\subsection{Practical limitation: derivative estimation in noisy data}
+%------------------------------------------------------------------------------
+
+A core limitation of classical SINDy is the need for time derivatives.
+When observational noise is present, numerical differentiation becomes unstable
+and can dominate the regression error.
+This is not a weakness of SINDy itself but a fundamental signal processing issue:
+differentiation amplifies noise.
+
+Classical remedies are valuable and should be emphasized:
+\begin{itemize}
+  \item smoothing / filtering before differentiation,
+  \item higher-order finite differences,
+  \item total-variation regularized differentiation,
+  \item spline fitting,
+  \item carefully chosen sampling rates and noise models.
+\end{itemize}
+In many realistic use cases, these classical techniques are sufficient and yield
+excellent interpretable equation discovery.
+
+However, we see that \textbf{neural methods can extend}
+classical approaches by providing stronger smoothing and more stable derivatives
+in highly noisy regimes, where traditional finite differences become unreliable.
+
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/sindy_timeseries.png}
+\caption{Observed time series used for equation discovery: SINDy infers governing equations from trajectories, but derivative quality becomes a limiting factor in the presence of noise.}
+\label{fig:lec19_sindy_timeseries}
+\end{figure}
+%------------------------------------------------------------------------------
+
+
+%------------------------------------------------------------------------------
+\subsection{Neural SINDy: denoise with NN, differentiate with autograd}
+%------------------------------------------------------------------------------
+
+Neural SINDy introduces a neural surrogate $\mathbf{x}_\theta(t)$ that learns a
+\emph{smooth trajectory representation} from noisy observations.
+The network maps time to state:
+\[
+t \mapsto \mathbf{x}_\theta(t)\in\mathbb{R}^3.
+\]
+This step resembles classical smoothing (e.g. spline fitting),
+but uses a flexible neural parameterization.
+
+Once $\mathbf{x}_\theta(t)$ is trained, derivatives are computed using
+automatic differentiation:
+\[
+\dot{\mathbf{x}}_\theta(t)
+=
+\frac{d}{dt}\mathbf{x}_\theta(t),
+\]
+which avoids noisy finite differences.
+
+Finally, the sparse discovery step remains unchanged:
+\[
+\dot{\mathbf{x}}_\theta(t)\approx\Theta(\mathbf{x}_\theta(t))\,\Xi.
+\]
+
+\noindent
+\textbf{Key message:}
+Neural networks are not replacing SINDy.
+They augment the pipeline by providing robust smoothing and derivatives,
+thus increasing the regime in which classical sparse regression can succeed.
+
+\vspace{2mm}
+\begin{codeonly}{Neural SINDy: learn smooth trajectory t->x(t) and use autograd derivatives}
+# ------------------------------------------------------------
+# Method 2: Neural Network to learn smooth trajectory
+# ------------------------------------------------------------
+class TrajectoryNet(nn.Module):
+    """Network maps time -> state (x,y,z), giving a smooth interpolant."""
+    def __init__(self, hidden_dim=128, n_layers=4):
+        super().__init__()
+        layers = [nn.Linear(1, hidden_dim), nn.Tanh()]
+        for _ in range(n_layers - 1):
+            layers += [nn.Linear(hidden_dim, hidden_dim), nn.Tanh()]
+        layers += [nn.Linear(hidden_dim, 3)]
+        self.net = nn.Sequential(*layers)
+        for m in self.net:
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def forward(self, t):
+        return self.net(t)
+
+# tensors and normalization
+t_tensor = torch.tensor(t_eval, dtype=torch.float32, device=device).view(-1, 1)
+X_noisy_tensor = torch.tensor(X_noisy, dtype=torch.float32, device=device)
+
+t_min, t_max = t_tensor.min(), t_tensor.max()
+t_normalized = (t_tensor - t_min) / (t_max - t_min)
+
+# train smoothing network
+model = TrajectoryNet(hidden_dim=128, n_layers=4).to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+for epoch in range(45000):
+    optimizer.zero_grad()
+    X_pred = model(t_normalized)
+    loss = torch.mean((X_pred - X_noisy_tensor) ** 2)
+    loss.backward()
+    optimizer.step()
+
+# autograd derivatives
+model.eval()
+t_normalized.requires_grad_(True)
+X_smooth = model(t_normalized)
+
+dXdt_autograd = []
+for i in range(3):
+    grad = torch.autograd.grad(
+        outputs=X_smooth[:, i].sum(),
+        inputs=t_normalized,
+        retain_graph=True
+    )[0]
+    grad = grad / (t_max - t_min)   # undo time normalization
+    dXdt_autograd.append(grad)
+
+dXdt_autograd = torch.stack(dXdt_autograd, dim=1)
+\end{codeonly}
+\vspace{2mm}
+
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/neural_sindy_comparison.png}
+\caption{Neural SINDy: NN trajectory smoothing followed by autograd derivatives improves derivative quality and stabilizes sparse discovery in high-noise regimes.}
+\label{fig:lec19_neural_sindy_comparison}
+\end{figure}
+%------------------------------------------------------------------------------
+
+
+%------------------------------------------------------------------------------
+\subsection{Balanced perspective: classical strengths and AI extensions}
+%------------------------------------------------------------------------------
+
+It is important to take a balanced view.
+
+\textbf{Classical techniques remain highly valuable:}
+SINDy and related sparse regression approaches are among the best tools for
+\emph{interpretable} dynamical model discovery.
+When noise levels are moderate and derivatives can be estimated reliably
+(using filtering, splines, or regularized differentiation),
+classical SINDy often recovers equations with remarkable accuracy and
+scientific transparency.
+
+\textbf{AI and neural emulation extend the toolbox:}
+Neural smoothing and autograd derivatives can widen the range of applicability,
+especially when:
+\begin{itemize}
+  \item observational noise is high,
+  \item sampling is uneven or limited,
+  \item derivatives are poorly resolved,
+  \item one wants simultaneously a good predictive emulator and an interpretable model.
+\end{itemize}
+
+In this sense, Neural SINDy does not compete with classical system identification,
+but \emph{combines} modern neural approximation with interpretable sparse regression.
+The resulting workflow is a representative example of the broader trend in
+scientific machine learning:
+\[
+\text{classical physics/statistics} \;+\; \text{neural representation learning}
+\;\Rightarrow\; \text{robust hybrid methods.}
+\]
+
+
+%==============================================================================
+\section{Learning the Force Term: Neural RHS and Hybrid Dynamics}
+%==============================================================================
+
+%------------------------------------------------------------------------------
+\subsection{From discovery to emulation}
+%------------------------------------------------------------------------------
+
+A third viewpoint is to stop aiming for explicit equation discovery and instead
+learn a \emph{predictive surrogate model}.
+Instead of constructing an interpretable sparse library (as in SINDy),
+we learn the full right-hand side (RHS) directly:
+\[
+\dot{\mathbf{x}} = \mathbf{f}_\theta(\mathbf{x}),
+\]
+where $\mathbf{f}_\theta$ is represented by a neural network.
+
+This is the most flexible option and can represent complicated nonlinear dynamics.
+The trade-off is that the learned mechanism is typically less interpretable
+than sparse equation discovery.
+Nevertheless, for many applications (forecasting, emulation, fast surrogates)
+predictive skill is the primary objective, and neural RHS models are highly effective.
+
+%------------------------------------------------------------------------------
+\subsection{Hybrid modeling: known physics + learned closure}
+%------------------------------------------------------------------------------
+
+Many scientific systems contain partially known physics.
+A common approach is \textbf{hybrid modeling}:
+\[
+\dot{\mathbf{x}}
+=
+\mathbf{f}(\mathbf{x}) + \mathbf{g}_\theta(\mathbf{x}),
+\]
+where $\mathbf{f}$ encodes known components (e.g. conservation laws,
+linear dynamics, or well-understood processes) and $\mathbf{g}_\theta$
+learns unknown forcing or closure terms.
+
+This combines:
+\begin{itemize}
+  \item physical structure (stability and plausibility),
+  \item learned flexibility (representing missing processes).
+\end{itemize}
+
+Such hybrid approaches are often a good compromise: the neural network does not
+have to learn everything from scratch, but focuses on the part where the model is uncertain.
+This is a key principle in scientific machine learning: use neural networks
+where they provide value, but keep physically meaningful structure where possible.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/rhs_learning1.png}
+\caption{Learning the right-hand side (RHS) of a dynamical system: a neural network approximates $\mathbf{f}(\mathbf{x})$ in $\dot{\mathbf{x}}=\mathbf{f}(\mathbf{x})$.}
+\label{fig:lec19_rhs_learning1}
+\end{figure}
+%------------------------------------------------------------------------------
+
+
+%------------------------------------------------------------------------------
+\subsection{Training paradigms: derivatives vs.\ rollouts}
+%------------------------------------------------------------------------------
+
+Two typical training paradigms are:
+
+\begin{itemize}
+  \item \textbf{Derivative matching (local learning):} train on pairs
+  $(\mathbf{x},\dot{\mathbf{x}})$, minimizing
+  \[
+  \mathcal{L} = \mathbb{E}\,\|\mathbf{f}_\theta(\mathbf{x})-\dot{\mathbf{x}}\|^2.
+  \]
+  This makes RHS learning a supervised regression problem.
+
+  \item \textbf{Trajectory matching (global learning):} train by integrating the
+  learned system forward in time and matching multi-step rollouts.
+  This directly optimizes forecast skill but is computationally more expensive
+  and can be less stable in chaotic systems.
+\end{itemize}
+
+A crucial practical point (illustrated by Lorenz--63) is:
+\begin{itemize}
+  \item \textbf{short-term trajectory skill can be excellent},
+  \item \textbf{long-term divergence is unavoidable} in chaotic systems,
+  \item but \textbf{climatological structure (attractor statistics)} can still be captured.
+\end{itemize}
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/rhs_learning2.png}
+\caption{Hybrid modeling: combine known physics with a learned correction term (closure / forcing), improving realism while preserving structure.}
+\label{fig:lec19_rhs_learning2}
+\end{figure}
+%------------------------------------------------------------------------------
+
+
+%------------------------------------------------------------------------------
+\subsection{A central issue: sampling the state space}
+%------------------------------------------------------------------------------
+
+A major conceptual difference between classical equation discovery and neural RHS learning
+is the role of \textbf{sampling}.
+
+If we train only along one observed trajectory, then the model learns the vector field
+only on (or near) the attractor region that was visited by the system.
+This can be sufficient for short-term forecasts near that attractor,
+but it is fragile:
+small errors may push the solution outside the sampled region,
+where the learned RHS is poorly constrained.
+
+Therefore, for robust neural emulation, it is often beneficial to train the RHS on
+a much wider region of the state space:
+\[
+\mathbf{x} \sim \text{broad distribution in state space},
+\qquad
+\dot{\mathbf{x}} = \mathbf{f}(\mathbf{x}) \;\text{(true RHS)}.
+\]
+This yields a globally trained emulator of the vector field,
+not only a trajectory-trained one.
+
+\noindent
+In Lorenz--63, we can sample a bounding box around the attractor
+(with some margin) and evaluate the true RHS there.
+Figure~\ref{fig:lec19_rhs_space_sampling} shows the key geometry:
+the true trajectory occupies only a small part of the sampled 3D region,
+but the broader sampling stabilizes the learned model.
+
+\vspace{2mm}
+\begin{codeonly}{Visualize full state-space sampling vs.\ Lorenz-63 attractor}
+# ============================================================
+# Visualize state-space sampling + true Lorenz-63 trajectory
+# Saves: rhs_learning_space_sampling.png
+# ============================================================
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from scipy.integrate import solve_ivp
+
+sigma, rho, beta = 10.0, 28.0, 8.0/3.0
+
+def lorenz63(t, X):
+    x, y, z = X
+    return [
+        sigma * (y - x),
+        x * (rho - z) - y,
+        x * y - beta * z
+    ]
+
+# true trajectory
+x0 = [1.0, 1.0, 1.0]
+t_span = (0.0, 25.0)
+t_eval = np.linspace(*t_span, 6000)
+sol = solve_ivp(lorenz63, t_span, x0, t_eval=t_eval, rtol=1e-10)
+X_true = sol.y.T
+
+# state-space sampling
+np.random.seed(0)
+N_samples = 60000
+x_range = [-25, 25]
+y_range = [-35, 35]
+z_range = [0, 50]
+
+X_space = np.column_stack([
+    np.random.uniform(*x_range, size=N_samples),
+    np.random.uniform(*y_range, size=N_samples),
+    np.random.uniform(*z_range, size=N_samples),
+])
+
+# subsample for plotting
+idx = np.random.choice(N_samples, size=6000, replace=False)
+Xs = X_space[idx]
+
+# plot
+fig = plt.figure(figsize=(9, 7))
+ax = fig.add_subplot(111, projection="3d")
+ax.scatter(Xs[:, 0], Xs[:, 1], Xs[:, 2],
+           s=3, alpha=0.20, color="red",
+           label="state-space samples")
+ax.plot(X_true[:, 0], X_true[:, 1], X_true[:, 2],
+        color="tab:blue", linewidth=1.5,
+        label="true Lorenz-63 trajectory")
+
+ax.set_xlabel("x"); ax.set_ylabel("y"); ax.set_zlabel("z")
+ax.set_title("State-space sampling vs. Lorenz-63 attractor")
+ax.legend(loc="upper left")
+plt.tight_layout()
+plt.savefig("rhs_learning_space_sampling.png", dpi=200)
+plt.show()
+\end{codeonly}
+\vspace{2mm}
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/rhs_learning_space_sampling.png}
+\caption{Sampling strategy in state space for training neural RHS models:
+the Lorenz--63 trajectory occupies only a subset of the sampled 3D domain.
+Training on a broader region improves robustness of the learned vector field.}
+\label{fig:lec19_rhs_space_sampling}
+\end{figure}
+%------------------------------------------------------------------------------
+
+
+%------------------------------------------------------------------------------
+\subsection{Neural RHS learning on a full state-space sample}
+%------------------------------------------------------------------------------
+
+The following experiment illustrates \textbf{neural RHS learning with full state-space sampling}.
+We generate many random points in a 3D bounding box that covers the Lorenz--63 attractor,
+compute the true RHS at these points, and train a neural network:
+\[
+\mathbf{f}_\theta:\mathbb{R}^3\rightarrow\mathbb{R}^3,
+\qquad
+\mathbf{f}_\theta(\mathbf{x})\approx \mathbf{f}(\mathbf{x}).
+\]
+
+This training procedure yields a global approximation of the Lorenz vector field.
+After training, we integrate the learned system and compare the resulting trajectory
+to the true one.
+
+\vspace{2mm}
+\begin{codeonly}{Neural RHS learning on full state space (Lorenz-63)}
+# ============================================================
+# Neural RHS learning with FULL STATE-SPACE SAMPLING
+# Lorenz-63 vector field learned in R^3, not only on trajectory
+# Saves:
+#   (a) rhs_learning_space_1.png  (3D trajectory)
+#   (b) rhs_learning_space_2.png  (time series x,y,z)
+# ============================================================
+
+import torch
+import torch.nn as nn
+import numpy as np
+from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+torch.manual_seed(0)
+np.random.seed(0)
+
+# device
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
+
+# true Lorenz-63 RHS
+sigma, rho, beta = 10.0, 28.0, 8.0/3.0
+
+def lorenz63_rhs(X):
+    x, y, z = X[:,0], X[:,1], X[:,2]
+    dx = sigma * (y - x)
+    dy = x * (rho - z) - y
+    dz = x * y - beta * z
+    return np.stack([dx, dy, dz], axis=1)
+
+# sample full state space
+N_samples = 60000
+x_range = [-25, 25]
+y_range = [-35, 35]
+z_range = [0, 50]
+
+X_space = np.column_stack([
+    np.random.uniform(*x_range, size=N_samples),
+    np.random.uniform(*y_range, size=N_samples),
+    np.random.uniform(*z_range, size=N_samples),
+])
+dXdt_space = lorenz63_rhs(X_space)
+
+X_t = torch.tensor(X_space, dtype=torch.float32, device=device)
+dXdt_t = torch.tensor(dXdt_space, dtype=torch.float32, device=device)
+
+# neural RHS model
+class RHSNet(nn.Module):
+    def __init__(self, width=128, depth=4):
+        super().__init__()
+        layers = [nn.Linear(3, width), nn.Tanh()]
+        for _ in range(depth - 1):
+            layers += [nn.Linear(width, width), nn.Tanh()]
+        layers += [nn.Linear(width, 3)]
+        self.net = nn.Sequential(*layers)
+        for m in self.net:
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def forward(self, x):
+        return self.net(x)
+
+model = RHSNet().to(device)
+opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+# training
+epochs = 25000
+batch_size = 4096
+for ep in range(1, epochs + 1):
+    idx = torch.randint(0, N_samples, (batch_size,))
+    Xb = X_t[idx]
+    dXb = dXdt_t[idx]
+    opt.zero_grad()
+    pred = model(Xb)
+    loss = torch.mean((pred - dXb)**2)
+    loss.backward()
+    opt.step()
+
+# integrate learned RHS
+def rhs_nn(t, X):
+    Xt = torch.tensor(X, dtype=torch.float32, device=device).unsqueeze(0)
+    with torch.no_grad():
+        dX = model(Xt).cpu().numpy()[0]
+    return dX.tolist()
+
+x0 = [1.0, 1.0, 1.0]
+t_span = (0.0, 25.0)
+t_eval = np.linspace(*t_span, 5000)
+
+sol_true = solve_ivp(
+    lambda t, X: lorenz63_rhs(np.array(X)[None,:])[0],
+    t_span, x0, t_eval=t_eval, rtol=1e-10
+)
+sol_nn = solve_ivp(rhs_nn, t_span, x0, t_eval=t_eval, rtol=1e-10)
+
+# save figures rhs_learning_space_1.png and rhs_learning_space_2.png
+\end{codeonly}
+\vspace{2mm}
+
+\noindent
+The resulting comparisons are shown in Figures~\ref{fig:lec19_rhs_space_1}
+and~\ref{fig:lec19_rhs_space_2}.
+We emphasize again a balanced interpretation:
+
+\begin{itemize}
+  \item For chaotic systems, a trajectory match will not remain perfect for long times.
+  Divergence is expected.
+  \item Nevertheless, a well-trained neural RHS can capture the correct qualitative attractor structure,
+  reproduce realistic short-term evolution, and represent the vector field in a broad region.
+\end{itemize}
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{images/img19/rhs_learning_space_1.png}
+\caption{Neural RHS learning on full state space: comparison of 3D trajectories
+(true Lorenz--63 vs.\ learned RHS integrated forward).}
+\label{fig:lec19_rhs_space_1}
+\end{figure}
+%------------------------------------------------------------------------------
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/rhs_learning_space_2.png}
+\caption{Neural RHS learning on full state space: time series comparison for $x(t)$, $y(t)$, and $z(t)$
+(true vs.\ learned RHS model).}
+\label{fig:lec19_rhs_space_2}
+\end{figure}
+%------------------------------------------------------------------------------
+
+\noindent
+\textbf{Take-home message:}
+Neural RHS learning is a powerful emulation approach, especially when combined
+with adequate state-space sampling and with hybrid constraints.
+It complements classical methods such as SINDy: while SINDy aims for sparse
+interpretable equations, neural RHS learning aims for robust predictive
+surrogates of complex dynamics.
+
+
+\FloatBarrier
+%==============================================================================
+\section{Physics constraints in neural emulators}
+%==============================================================================
+
+We emphasize a crucial lesson for dynamical emulation:
+\emph{neural accuracy alone is not sufficient}.
+Even if a neural network achieves excellent one-step mean-squared error (MSE),
+it may still generate physically implausible solutions after long rollouts,
+because small errors accumulate and push the state into regions where the learned
+dynamics violates invariants.
+
+A canonical testbed is \textbf{1D periodic advection} on a ring:
+\[
+\partial_t u + c\,\partial_x u = 0,
+\qquad u(0,t)=u(1,t).
+\]
+In the continuous system, the solution is a pure translation and important global
+properties are preserved.
+
+\paragraph{Invariant: mass conservation.}
+For periodic advection, the spatial integral
+\[
+M(t)=\int_0^1 u(x,t)\,dx
+\]
+remains constant in time.
+In discrete form on a uniform grid this corresponds to
+\[
+M^n \;\approx\; \Delta x \sum_{i=1}^{N} u_i^n,
+\]
+and conservative numerical schemes preserve this quantity.
+
+\vspace{1mm}
+\noindent
+As reference physics, we use a conservative upwind finite-volume time step:
+\[
+u^{n+1}_i = u^n_i - \mathrm{CFL}\,(u^n_i-u^n_{i-1}),
+\qquad
+\mathrm{CFL}=c\Delta t/\Delta x,
+\]
+which is mass-conservative by construction.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/Advection_Periodic_Truth.png}
+\caption{Reference solution for periodic advection (truth): the initial pattern is transported without deformation.}
+\label{fig:lec19_adv_truth}
+\end{figure}
+%------------------------------------------------------------------------------
+
+%------------------------------------------------------------------------------
+\subsection{CNN one-step emulators: free vs.\ conservative by construction}
+%------------------------------------------------------------------------------
+
+We now emulate the one-step map
+\[
+u^n \mapsto u^{n+1}
+\]
+with a neural network.
+A CNN is a natural architecture for this problem because advection corresponds
+to translation-like local structure on the periodic ring.
+
+A robust and physically meaningful design is to predict a \textbf{residual increment}
+\[
+u^{n+1} = u^n + \Delta u_\theta(u^n).
+\]
+This residual viewpoint is beneficial because it focuses learning on the local change.
+
+\paragraph{Unconstrained CNN (free model).}
+A standard CNN learns $\Delta u_\theta$ and is trained in MSE on one-step pairs.
+This yields strong one-step performance---but does not prevent slow drift in invariants.
+
+\paragraph{Conservative CNN (constraint by construction).}
+Mass conservation can be enforced \emph{exactly} at every step by imposing
+\[
+\sum_{i=1}^N \Delta u_i = 0.
+\]
+A simple and effective implementation is a per-sample projection:
+\[
+\Delta u \;\leftarrow\; \Delta u - \frac{1}{N}\sum_{i=1}^N \Delta u_i.
+\]
+Then,
+\[
+\sum_i u_i^{n+1} = \sum_i u_i^n
+\]
+holds exactly (up to floating point rounding), independent of training quality.
+
+This is an important conceptual point:
+\textbf{we do not merely penalize mass drift, we eliminate it by design.}
+
+\vspace{2mm}
+\begin{codeonly}{CNN emulator with exact mass conservation (by construction)}
+class CNNBase(nn.Module):
+    def __init__(self, kernel_size=5):
+        super().__init__()
+        pad = kernel_size // 2
+        self.net = nn.Sequential(
+            nn.Conv1d(1, 16, kernel_size, padding=pad, padding_mode="circular"),
+            nn.Tanh(),
+            nn.Conv1d(16, 16, kernel_size, padding=pad, padding_mode="circular"),
+            nn.Tanh(),
+            nn.Conv1d(16, 1, kernel_size, padding=pad, padding_mode="circular"),
+        )
+
+    def forward_du(self, u):
+        u1 = u.unsqueeze(1)              # [B,1,N]
+        du = self.net(u1).squeeze(1)     # [B,N]
+        return du
+
+class CNNFree(nn.Module):
+    def __init__(self, kernel_size=5):
+        super().__init__()
+        self.core = CNNBase(kernel_size)
+
+    def forward(self, u):
+        du = self.core.forward_du(u)
+        return u + du
+
+class CNNConservative(nn.Module):
+    def __init__(self, kernel_size=5):
+        super().__init__()
+        self.core = CNNBase(kernel_size)
+
+    def forward(self, u):
+        du = self.core.forward_du(u)
+        du = du - du.mean(dim=-1, keepdim=True)  # enforce sum(du)=0
+        return u + du
+\end{codeonly}
+\vspace{2mm}
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/Advection_Periodic_CNN_Loss1.png}
+\caption{Training loss comparison for CNN one-step emulators:
+unconstrained vs.\ conservative-by-construction.
+The conservative projection does not prevent learning the one-step map.}
+\label{fig:lec19_adv_cnn_loss}
+\end{figure}
+%------------------------------------------------------------------------------
+
+\paragraph{Short-term snapshots are not enough.}
+Both CNN variants can look visually excellent for short rollouts,
+and both can achieve a low one-step error.
+This is why mass-conservation issues are frequently missed if we only evaluate
+a few steps.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/Advection_Periodic_CNN_60.png}
+\caption{Rollout snapshots at selected time steps: even if the unconstrained CNN looks plausible in short horizons, physics violations can accumulate over long rollouts.}
+\label{fig:lec19_adv_cnn_snapshots}
+\end{figure}
+%------------------------------------------------------------------------------
+
+%------------------------------------------------------------------------------
+\subsection{Diagnostics: conservation and long-term stability}
+%------------------------------------------------------------------------------
+
+A physically meaningful diagnostic is to track invariant drift over time.
+For the discrete advection model, we monitor the mass
+\[
+M^n=\Delta x\sum_i u_i^n
+\]
+along a rollout.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/Advection_Periodic_CNN_Mass_Conservation_Test1.png}
+\caption{Mass conservation test: truth vs.\ CNN free vs.\ CNN conservative.
+The conservative CNN preserves mass exactly by construction, while the unconstrained CNN typically drifts.}
+\label{fig:lec19_adv_cnn_mass}
+\end{figure}
+%------------------------------------------------------------------------------
+
+The effect becomes even more pronounced in long rollouts:
+drift in invariants can slowly change the qualitative behaviour of the system,
+even when short-term predictions look excellent.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img19/Advection_Periodic_CNN_Long_Mass_Conservation_Test.png}
+\caption{Long-rollout diagnostic: relative mass error over hundreds of steps.
+Conservative-by-construction models remain physically valid in invariants even in long horizons.}
+\label{fig:lec19_adv_cnn_long_mass}
+\end{figure}
+%------------------------------------------------------------------------------
+
+\paragraph{Generalization to new shapes.}
+A further lesson is that good emulators must generalize beyond the training distribution.
+We therefore test the CNNs on qualitatively different initial conditions
+(Gaussian bump, top-hat, sine wave, two bumps).
+For each shape we compare initial condition and $t=60$ state against truth.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.88\textwidth]{images/img19/Advection_Periodic_CNN_B_1_60.png}
+\caption{Generalization test (example 1): unseen initial condition and its advected state at $t=60$.
+The conservative CNN stabilizes rollouts by preventing invariant drift.}
+\label{fig:lec19_adv_cnn_gen1}
+\end{figure}
+%------------------------------------------------------------------------------
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.88\textwidth]{images/img19/Advection_Periodic_CNN_B_2_60.png}
+\caption{Generalization test (example 2): conservative-by-construction constraints improve robustness beyond the training distribution.}
+\label{fig:lec19_adv_cnn_gen2}
+\end{figure}
+%------------------------------------------------------------------------------
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.88\textwidth]{images/img19/Advection_Periodic_CNN_B_3_60.png}
+\caption{Generalization test (example 3): different shape families (e.g.\ sine-type initial conditions) reveal differences in long-term stability.}
+\label{fig:lec19_adv_cnn_gen3}
+\end{figure}
+%------------------------------------------------------------------------------
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.88\textwidth]{images/img19/Advection_Periodic_CNN_B_4_60.png}
+\caption{Generalization test (example 4): two-bump initial condition. Conservative constraints prevent systematic drift and preserve physically meaningful behaviour.}
+\label{fig:lec19_adv_cnn_gen4}
+\end{figure}
+%------------------------------------------------------------------------------
+
+\noindent
+\textbf{Take-home messages.}
+\begin{itemize}
+  \item \textbf{Short-term accuracy is not a proxy for long-term physical validity.}
+        One-step MSE can be low even when invariants slowly drift.
+  \item \textbf{Hard constraints by construction are often superior to soft penalty terms.}
+        A simple projection can guarantee exact conservation.
+  \item \textbf{Physical constraints act as strong regularizers.}
+        They improve robustness, generalization, and rollout stability.
+\end{itemize}
+
+
+
+
+\FloatBarrier
+
+
+%==============================================================================
+\section{Causal Modeling with Neural Networks}
+%==============================================================================
+
+%------------------------------------------------------------------------------
+\subsection{Correlation versus causality}
+%------------------------------------------------------------------------------
+
+In many geoscientific applications we observe strong correlations between
+variables, but the underlying \textbf{causal mechanism} can still differ.
+This is particularly relevant in meteorology and climate,
+where synoptic forcing, advection, and feedback loops create complex dependence.
+
+We note:
+\begin{itemize}
+  \item \textbf{correlation does not imply causation},
+  \item causal direction can change with the dominant physical regime,
+  \item hidden confounders can generate \emph{spurious} statistical links.
+\end{itemize}
+
+Causal modeling does not ask only for prediction,
+\[
+p(T \mid P),
+\]
+but for interventions:
+\[
+p\bigl(T\,|\,do(P=p)\bigr),
+\]
+i.e.\ \emph{what would happen if we could modify pressure in an experiment?}
+In Earth-system science, such interventional thinking is crucial for
+robust decision support and trustworthy extrapolation.
+
+%------------------------------------------------------------------------------
+\subsection{A meteorological toy model: Pressure, Temperature, and Forcing}
+%------------------------------------------------------------------------------
+
+To illustrate these concepts, we use a small dynamical system with
+pressure $P(t)$, temperature $T(t)$, and an external forcing $F(t)$.
+The forcing mimics large-scale advection and synoptic variability, e.g.
+a combination of slow waves and step-like frontal passages.
+
+The synthetic dynamics are constructed such that the time series look plausible
+and exhibit strong dependence, while the \emph{true causal structure} differs.
+
+%------------------------------------------------------------------------------
+\subsection{Two scenarios: similar correlations, different physics}
+%------------------------------------------------------------------------------
+
+\textbf{Scenario 1: synoptic forcing + causal coupling $P\rightarrow T$.}
+
+Here pressure is primarily driven by external forcing (weather systems),
+while temperature responds to pressure anomalies, representing adiabatic
+compression / subsidence warming:
+\[
+\frac{dP}{dt}
+=
+-\gamma_P(P-P_{eq}) + \beta_P F(t),
+\qquad
+\frac{dT}{dt}
+=
+-\gamma_T(T-T_{eq}) + \alpha(P-P_{eq}).
+\]
+Thus the causal chain is:
+\[
+F \;\rightarrow\; P \;\rightarrow\; T,
+\]
+and the true direct causal effect is $\alpha > 0$.
+
+\vspace{2mm}
+\textbf{Scenario 2: common forcing only (confounded).}
+
+Now both $P$ and $T$ are forced by $F(t)$, but there is no direct link $P\rightarrow T$:
+\[
+\frac{dP}{dt}
+=
+-\gamma_P(P-P_{eq}) + \beta_P F(t),
+\qquad
+\frac{dT}{dt}
+=
+-\gamma_T(T-T_{eq}) + \beta_T F(t),
+\qquad
+\alpha=0.
+\]
+The true structure is:
+\[
+F \;\rightarrow\; P,
+\qquad
+F \;\rightarrow\; T,
+\qquad
+P \not\rightarrow T.
+\]
+
+\noindent
+\textbf{Key point:}
+Both scenarios can show a comparable correlation between $P$ and $T$,
+but represent \emph{fundamentally different} physical regimes:
+direct coupling versus confounding by advection / synoptic forcing.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{images/img19/causal_timeseries_dynamics.png}
+\caption{Two dynamical scenarios with different causal structure.
+Top: time series of pressure and temperature. Bottom: scatter plots.
+Scenario 1 shows a true $P\rightarrow T$ effect; Scenario 2 shows a spurious $P$--$T$ relation induced by common forcing $F(t)$.}
+\label{fig:lec19_causal_timeseries_dynamics}
+\end{figure}
+%------------------------------------------------------------------------------
+
+%------------------------------------------------------------------------------
+\subsection{Classical baselines: correlation and regression (valuable but limited)}
+%------------------------------------------------------------------------------
+
+Before applying AI-based methods, we explicitly promote classical
+statistical diagnostics as essential baselines:
+\begin{itemize}
+  \item correlation analysis $\mathrm{corr}(P,T)$,
+  \item naive regression $T \sim P$,
+  \item multiple regression $T \sim P + F$ when confounders are known.
+\end{itemize}
+
+In Scenario 1, naive regression recovers the sign and magnitude of the coupling
+because $P$ truly impacts $T$.
+In Scenario 2, naive regression yields a \emph{non-zero slope} even though
+the true causal effect is exactly zero --- a textbook example of spurious
+regression due to confounding.
+
+Multiple regression can correct this if the confounder $F$ is observed and included,
+i.e.\ $T \sim P + F$.
+However, this approach still requires a correct \emph{a priori} decision about which
+variables are confounders, and it does not directly discover causal structure.
+
+\noindent
+\textbf{Balanced view:}
+Classical methods are indispensable and often sufficient,
+but they can fail systematically when confounding is hidden or the causal graph is unknown.
+This motivates the use of causal discovery methods.
+
+%------------------------------------------------------------------------------
+\subsection{Neural causal discovery: remove autocorrelation, learn cross-effects}
+%------------------------------------------------------------------------------
+
+Time series data exhibit strong autocorrelation:
+each variable is often well-predicted by its own past.
+A causal discovery method must therefore separate:
+\begin{itemize}
+  \item \textbf{self-dependence} (autocorrelation),
+  \item \textbf{cross-variable effects} (causal influences).
+\end{itemize}
+
+A simple and effective preprocessing step is to remove the dominant
+self-dependence for each variable by predicting:
+\[
+X_i(t) \approx a_i\,X_i(t-1),
+\]
+and forming the residual (\emph{innovation})
+\[
+\varepsilon_i(t) = X_i(t) - a_i\,X_i(t-1).
+\]
+Causal discovery then targets cross-variable prediction:
+\[
+\boldsymbol{\varepsilon}(t) \approx W\,\mathbf{X}(t-1),
+\]
+where $W$ is sparse and interpretable:
+$W_{ij}$ measures the influence of variable $j$ on variable $i$.
+
+In the notebook implementation, sparsity is induced through Lasso regression,
+leading to a learned directed influence matrix and a corresponding causal graph.
+This demonstrates the main promise:
+\begin{center}
+\textbf{AI can learn causal structure --- not just correlations.}
+\end{center}
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{images/img19/neural_causal_discovery.png}
+\caption{Neural causal discovery for both scenarios.
+Left: learned sparse influence matrix $W$ after removing autocorrelation.
+Right: corresponding directed graph.
+Scenario 1 correctly yields $F\rightarrow P$ and $P\rightarrow T$;
+Scenario 2 yields $F\rightarrow P$ and $F\rightarrow T$ with a near-zero $P\rightarrow T$ link.}
+\label{fig:lec19_neural_causal_discovery}
+\end{figure}
+%------------------------------------------------------------------------------
+
+%------------------------------------------------------------------------------
+\subsection{PCMCI: statistical causal discovery for time series}
+%------------------------------------------------------------------------------
+
+Besides neural methods, we note that that strong causal discovery tools
+also exist in \textbf{classical statistics}.
+A prominent approach for time series is PCMCI (Peter--Clark Momentary Conditional Independence),
+implemented for example in \texttt{tigramite}.
+
+PCMCI combines:
+\begin{itemize}
+  \item conditional independence testing (e.g.\ partial correlation),
+  \item causal graph learning with time-lag structure,
+  \item explicit significance control for spurious edges.
+\end{itemize}
+
+In the notebook experiment, PCMCI correctly separates the regimes:
+\begin{itemize}
+  \item Scenario 1: detects $F(t-\tau)\rightarrow P(t)$ and $P(t-\tau)\rightarrow T(t)$,
+  \item Scenario 2: detects $F(t-\tau)\rightarrow P(t)$ and $F(t-\tau)\rightarrow T(t)$,
+        but no direct $P\rightarrow T$.
+\end{itemize}
+
+This makes PCMCI a powerful benchmark method:
+it is transparent, statistically grounded, and complements AI approaches well.
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{images/img19/causal_pcmci_graphs.png}
+\caption{PCMCI causal discovery graphs for both scenarios.
+PCMCI identifies time-lagged directed links and correctly distinguishes causal coupling from confounding.}
+\label{fig:lec19_causal_pcmci_graphs}
+\end{figure}
+%------------------------------------------------------------------------------
+
+%------------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{images/img19/causal_pcmci_timeseries.png}
+\caption{PCMCI lag-structure visualization: discovered time-lagged causal dependencies for both scenarios.}
+\label{fig:lec19_causal_pcmci_timeseries}
+\end{figure}
+%------------------------------------------------------------------------------
+
+%------------------------------------------------------------------------------
+\subsection{Take-home messages for Earth-system applications}
+%------------------------------------------------------------------------------
+
+Causal modeling is not only a philosophical extension of statistics, but a
+practical requirement when models are used for intervention analysis,
+policy, or impact assessment.
+
+Main messages:
+\begin{itemize}
+  \item \textbf{Diagnostics first:} classical correlation and regression remain essential baselines.
+  \item \textbf{Confounding is common:} spurious links can arise naturally from shared forcing.
+  \item \textbf{AI helps:} neural methods can extract sparse directed influence structures
+        once autocorrelation is removed.
+  \item \textbf{Statistics still matters:} PCMCI provides a rigorous, interpretable benchmark.
+\end{itemize}
+
+\noindent
+In practice, robust workflows combine physics knowledge, statistical causal discovery,
+and modern machine learning to obtain \emph{trustworthy and interpretable}
+causal conclusions from complex Earth-system time series.
+
+\FloatBarrier

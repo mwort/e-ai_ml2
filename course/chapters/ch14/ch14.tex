@@ -1,0 +1,446 @@
+%!TEX root = ../../e-ai_ML2.tex
+\chapter{CI/CD -- Continuous Integration and Deployment}
+
+%================================================================================
+%
+%================================================================================
+\section{Overview and Motivation}
+Continuous Integration and Continuous Deployment (CI/CD) are cornerstones of modern software development workflows. They enable teams to automate repetitive steps, validate code changes early, and streamline releases. In the context of machine learning (ML), CI/CD ensures reproducibility, robustness, and scalability of model training and deployment processes.
+
+By integrating code and testing frequently, and deploying automatically, teams can respond to changes and feedback much faster. These practices form a foundation for MLOps.
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\subsection{What is CI/CD?}
+CI/CD combines several automation practices in software engineering. While the terms are often used together, they represent different stages of the development-to-deployment pipeline.
+
+\begin{itemize}
+\item \textbf{Continuous Integration (CI)}: Frequent merging of code changes into a shared repository, with automated builds and tests.
+\item \textbf{Continuous Delivery (CD)}: Ensures software is always in a deployable state through automated validation and packaging.
+\item \textbf{Continuous Deployment}: Extends CD by automatically deploying validated changes to production.
+\end{itemize}
+
+These strategies reduce integration issues and allow quicker iterations and feedback.
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\subsection{CI/CD in Machine Learning}
+Applying CI/CD principles in ML development helps tackle the complexity of data, experiments, and model lifecycle. The goal is to bring automation, consistency, and traceability to every stage.
+
+Machine learning projects benefit from CI/CD by automating:
+\begin{itemize}
+\item Code formatting and linting
+\item Testing of data and code
+\item Deployment to inference systems or containers
+\item Model training and evaluation pipelines
+\end{itemize}
+
+%================================================================================
+%
+%================================================================================
+\section{Tools and Frameworks for CI/CD}
+To implement CI/CD workflows, various tools exist at both local and cloud levels. These tools help automate testing, formatting, builds, and deployments. In this section, we examine tools like Git hooks, pre-commit, GitHub Actions, GitLab CI, and Jenkins.
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\subsection{Local Tools: Git Hooks and Pre-Commit}
+
+A Git hook is a script that runs automatically when certain Git events occur — such as making a commit. Hooks can enforce rules, run tests, or format code before the commit is completed. In this example, we use a simple \texttt{pre-commit} hook that automatically runs tests with \texttt{pytest} and formats the code using \texttt{black}. If the tests fail, the commit is blocked.
+
+To create and activate this hook, follow these steps:
+
+\begin{enumerate}
+  \item Open your Git repository or initialize one:
+\begin{codeonly}{bash}
+mkdir myproject
+cd myproject
+git init
+\end{codeonly}
+
+  \item Edit the \texttt{pre-commit} file using \texttt{vi}:
+\begin{codeonly}{bash}
+vi .git/hooks/pre-commit
+\end{codeonly}
+
+  Inside the editor, press \texttt{i} to enter insert mode and add the following lines:
+
+\begin{codeonly}{git\_hooks}
+#!/bin/sh
+pytest || exit 1 # Run a Python test framework
+black .          # Use black to format your python code
+\end{codeonly}
+
+  Save and quit \texttt{vi} with \texttt{:wq}.
+
+  \item Make the script executable:
+\begin{codeonly}{bash}
+chmod +x .git/hooks/pre-commit
+\end{codeonly}
+
+  \item Now try committing in your project:
+\begin{codeonly}{bash}
+git add .
+git commit -m "Try pre-commit hook"
+\end{codeonly}
+
+If the tests pass, the code will be automatically formatted and committed. If the tests fail, the commit will be blocked.
+\end{enumerate}
+
+This local setup is useful for individual developers but not shared across the team. For a portable, version-controlled solution, see the next section on the \texttt{pre-commit} framework.
+
+%------------------------------------------------------------------------------
+%
+%------------------------------------------------------------------------------
+\textbf{What happens during this commit?}
+
+When we run \texttt{git commit}, Git executes the \texttt{pre-commit} hook automatically before finalizing the commit. The script runs the tests with \texttt{pytest} and formats the code using \texttt{black}.
+
+If all tests pass and \texttt{black} completes successfully, Git continues with the commit. If either of them fails, Git aborts the commit, and no changes are saved in the repository.
+
+This is a simple but effective way to catch mistakes before they are committed. It also ensures that all code remains consistently formatted. The output of the command line shows each step, and you can trace whether the hook ran successfully or not.
+
+Such hooks are only active locally and are not shared by default. For shared configurations across a team, we recommend the \texttt{pre-commit} framework, described in the next section.
+
+\subsubsection{The \texttt{pre-commit} framework}
+\label{sec:pre-commit}
+Maintaining consistent code formatting is crucial for readability, collaboration, and overall code quality. However, manual formatting can be time-consuming and prone to errors. In this section, we will explore how to automate code formatting using Python Black and the Pre-Commit framework.
+
+\textbf{What is Python Black?}
+
+Python Black is a popular code formatter for Python that automatically formats your code to conform to the PEP 8 style guide. It is fast, efficient, and highly customizable.
+
+\textbf{What is Pre-Commit?}
+
+Pre-Commit is a framework that allows you to run checks and hooks on your code before committing it to your version control system. It is a great way to ensure that your code meets certain standards and conventions before it is committed.
+
+\textbf{Installing Python Black and Pre-Commit}
+To get started, you'll need to install Python Black and Pre-Commit. You can do this using pip:
+
+\begin{codeonly}{install Python Black and the Pre-Commit framework}
+pip install black pre-commit
+\end{codeonly}
+
+Once installed, you'll need to configure Pre-Commit to use Python Black. Create a new file called \texttt{.pre-commit-config.yaml} in the root of your project with the following contents. You should check-in \texttt{.pre-commit-config.yaml} into your code repository.
+
+\begin{codeonly}{\texttt{.pre-commit-config.yaml}}
+repos:
+  - repo: local
+    hooks:
+      - id: black
+        name: black
+        entry: black
+        language: python
+        types: [python]
+\end{codeonly}
+
+\textbf{Using Pre-Commit with Git}
+To use Pre-Commit with Git, you'll need to install the Pre-Commit Git hook. Run the following command:
+
+\begin{codeonly}{install the Pre-Commit Git hook}
+pre-commit install
+\end{codeonly}
+
+Pre-Commit should automatically format your code and prevent \texttt{git commit} from succeeding if the formatting is incorrect. Pre-Commit can also be applied manually.
+
+\begin{codeonly}{Run Pre-Commit manually}
+pre-commit run --all-files # apply to all files in a repository
+pre-commit run --files *   # apply to all files in the current directory
+\end{codeonly}
+
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\subsection{CI/CD Platforms}
+For full automation across machines, CI/CD platforms run your code in cloud or managed environments. They detect code changes, trigger pipelines, run tests, and deploy software.
+
+\begin{itemize}
+\item \textbf{GitHub Actions}: Native to GitHub, workflows are written in YAML and triggered by events like pushes or pull requests.
+\item \textbf{GitLab CI}: Configuration lives in a \texttt{.gitlab-ci.yml} file; supports custom runners, including on GPU-based systems.
+\item \textbf{Jenkins}: A widely-used automation server based on Groovy pipelines and extensible with plugins.
+\end{itemize}
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\subsection{Example: GitHub Actions Workflow}
+GitHub Actions lets you define custom workflows in YAML. Here's a minimal example to test Python code using \texttt{pytest}.
+
+\begin{codeonly}{.github/workflows/ci.yml}
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Test Python with Pytest
+on: push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+    - name: Install and run pytest
+      run: |
+        python -m pip install pytest
+        pytest
+\end{codeonly}
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\subsection{Example: GitLab CI}
+
+GitLab CI/CD pipelines are configured using a YAML file named {\tt .gitlab-ci.yml} located in the root directory of a project. The file defines the sequence of jobs to be executed during testing, building, or deploying software. The following example shows how to define a single job named {\tt pytest} that installs dependencies and runs unit tests using {\tt pytest} in a Python environment.
+
+\begin{codeonly}{\texttt{.gitlab-ci.yml}}
+stages:
+  - test
+
+pytest:
+  stage: test
+  image: python:3.10
+  script:
+    - pip install pytest
+    - pytest
+\end{codeonly}
+
+{\bf Running GitLab CI jobs locally using {\tt gitlab-runner}.} It is possible to test CI jobs locally, without pushing your code to a remote GitLab server. This can be useful for educational purposes, debugging, and iterative development. The GitLab runner binary includes a command {\tt exec shell} which allows local execution of individual jobs defined in the CI YAML file.
+
+{\bf Step 1: Install {\tt gitlab-runner} locally (without sudo).} You can download and install {\tt gitlab-runner} as a standalone binary in your user space. Version 16.9.1 is recommended because the {\tt exec} command was removed in later versions.
+
+\begin{codeonly}{bash}
+mkdir -p $HOME/bin
+cd $HOME/bin
+curl -L --output gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/v16.9.1/binaries/gitlab-runner-linux-amd64
+chmod +x gitlab-runner
+export PATH="$HOME/bin:$PATH"
+\end{codeonly}
+
+{\bf Step 2: Create a minimal project with test and CI configuration.} The following Jupyter Notebook cell creates a folder {\tt gitlab\_demo}, writes a simple test file, adds a {\tt .gitlab-ci.yml}, and initializes a Git repository with a first commit. This setup is necessary so that {\tt gitlab-runner} can properly interpret the CI job.
+
+\begin{codeonly}{python}
+import os
+import subprocess
+from pathlib import Path
+
+# Set up folder
+proj = Path("gitlab_demo")
+proj.mkdir(exist_ok=True)
+
+# Write test file
+(proj / "test_sample.py").write_text("""
+def add(a, b):
+    return a + b
+
+def test_add():
+    assert add(2, 2) == 4
+""")
+
+# Write GitLab CI YAML
+(proj / ".gitlab-ci.yml").write_text("""
+stages:
+  - test
+
+pytest:
+  stage: test
+  script:
+    - pip install pytest
+    - pytest
+""")
+
+# Initialize Git repository and make first commit
+subprocess.run("git init", shell=True, cwd=proj)
+subprocess.run("git config user.name 'CI Tester'", shell=True, cwd=proj)
+subprocess.run("git config user.email 'ci@test.local'", shell=True, cwd=proj)
+subprocess.run("git add .", shell=True, cwd=proj)
+subprocess.run("git commit -m 'initial commit'", shell=True, cwd=proj)
+
+print("Project created in ./gitlab\_demo")
+print("Run this in your terminal to execute the CI job:")
+print("   cd gitlab_demo")
+print("   gitlab-runner exec shell pytest")
+\end{codeonly}
+
+{\bf Step 3: Execute the job defined in {\tt .gitlab-ci.yml}.} After running the cell above, navigate to the directory {\tt gitlab\_demo} and run:
+
+\begin{codeonly}{bash}
+cd gitlab_demo
+gitlab-runner exec shell pytest
+\end{codeonly}
+
+This will start the GitLab runner in shell mode and execute the {\tt pytest} job exactly as it would be performed in a GitLab pipeline. The output should show that {\tt pip install pytest} runs successfully and that the test function passes.
+
+{\bf Important:} GitLab Runner requires that your repository has at least one commit. If you forget to run {\tt git commit}, you will see an error about the missing {\tt HEAD} revision. Always initialize the Git repository and make an initial commit before running local jobs.
+
+{\bf Interactive Notebook.} You can try this example locally in the Jupyter notebook\\
+\texttt{2\_Gitlab\_Runner\_with\_Docker.ipynb}, \\
+which automates all steps: it creates the project, writes the CI configuration and test, and runs the pipeline inside a Docker container using {\tt gitlab-runner}. You will need a working docker environment for this. 
+
+%================================================================================
+%
+%================================================================================
+\section{Testing with Pytest}
+Testing is a central pillar of CI/CD. For Python-based projects, \texttt{pytest} is a popular testing framework. It offers an intuitive syntax and powerful features like fixtures, parameterization, and integration with other tools.
+
+This section introduces basic test writing and advanced usage patterns.
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\subsection{Writing Simple Tests}
+Simple tests help validate expected behavior and prevent regressions. The \texttt{pytest} framework auto-discovers test files and functions with the prefix \texttt{test\_}.
+
+\begin{codeonly}{test\_example.py}
+def add(a, b):
+    return a + b
+
+def test_answer():
+    assert add(1, 3) == 4
+\end{codeonly}
+
+\textbf{Notebook:} See \texttt{3\_Gitlab\_Runner\_ShellTest.ipynb} for a full working example. Probably you will need to execute this outside of jupyter. You then get
+
+\begin{codeonly}{Output of Test.}
+(ropy_wsl) rolan@White-WIN:~/gitlab_demo_shell$ cd /home/rolan/gitlab_demo_shell
+   gitlab-runner exec shell pytest
+Runtime platform                                    arch=amd64 os=linux pid=23241 revision=782c6ecb version=16.9.1
+fatal: ambiguous argument 'HEAD~1': unknown revision or path not in the working tree.
+Use '--' to separate paths from revisions, like this:
+'git <command> [<revision>...] -- [<file>...]'
+Running with gitlab-runner 16.9.1 (782c6ecb)
+Preparing the "shell" executor
+Using Shell (bash) executor...
+executor not supported                              job=1 project=0 referee=metrics
+Preparing environment
+Running on White-WIN...
+Getting source from Git repository
+Fetching changes...
+Initialized empty Git repository in /home/rolan/gitlab_demo_shell/builds/0/project-0/.git/
+Created fresh repository.
+Checking out ff835cc9 as detached HEAD (ref is main)...
+Skipping Git submodules setup
+Executing "step_script" stage of the job script
+$ pytest
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.3.0
+rootdir: /home/rolan/gitlab_demo_shell/builds/0/project-0
+plugins: anyio-4.2.0, langsmith-0.3.32, asyncio-0.23.7, cov-5.0.0, mock-3.14.0, recording-0.13.1
+asyncio: mode=Mode.STRICT
+collected 1 item
+
+test_sample.py .                                                         [100%]
+
+============================== 1 passed in 0.03s ===============================
+Job succeeded
+(ropy_wsl) rolan@White-WIN:~/gitlab_demo_shell$ [I 2025-05-20 21:27:59.540 ServerApp] Saving file at /3_Gitlab_Runner_ShellTest.ipynb
+
+(ropy_wsl) rolan@White-WIN:~/gitlab_demo_shell$
+\end{codeonly}
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\subsection{Advanced Features}
+Pytest supports advanced testing features, making it suitable for both unit and integration testing. These include:
+
+\begin{itemize}
+\item Fixtures with \texttt{@pytest.fixture}
+\item Skipping tests conditionally
+\item Parametrized test cases
+\item GPU-specific testing
+\item Mocking external dependencies
+\end{itemize}
+
+Here's an example using monkeypatching to mock a function call in a test:
+
+\begin{codeonly}{monkeypatch}
+import xarray, numpy
+
+def my_processing(filename):
+    data = xarray.open_dataset(filename)
+    # some processing
+    return data
+
+def open_dataset_mock(*kwargs, **args):
+    return xarray.Dataset({"X": numpy.arange(5)})
+
+def test_processing(monkeypatch):
+    monkeypatch.setattr(xarray, "open_dataset", open_dataset_mock)
+    x = my_processing("no-name.nc")
+    assert x.X.sum() == 10
+\end{codeonly}
+
+%================================================================================
+%
+%================================================================================
+\section{CI/CD Runners and Cloud Integration}
+To execute pipelines, CI/CD systems rely on agents called \emph{runners}. These can be hosted (by GitHub/GitLab) or self-hosted (on-premises or cloud). This section covers how runners work and how to use custom infrastructure, such as GPU-accelerated systens, to scale your CI pipelines.
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\subsection{GitLab/GitHub Runners}
+Runners are services that execute CI/CD jobs. Hosted runners are maintained by the platform provider, while self-hosted runners allow customization.
+
+\begin{itemize}
+\item Hosted runners: pre-configured and maintained (default in GitHub Actions)
+\item Self-hosted runners: user-managed with support for GPUs or custom stacks
+\item Containers: jobs typically run in isolated Docker containers
+\end{itemize}
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\subsection{Example: Self-Hosted Runner Setup}
+To set up a self-hosted runner (e.g., in the European Weather Cloud), follow these steps:
+
+\begin{enumerate}
+\item Launch a virtual machine with suitable hardware
+\item Install Docker and prepare storage
+\item Register the GitLab runner with the project token
+\item Tag the runner for use with specific jobs
+\item Reference the runner using tags in your CI pipeline
+\end{enumerate}
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\subsection{Best Practices}
+To ensure efficient and reliable CI/CD pipelines, follow these recommendations:
+
+\begin{itemize}
+\item Use code formatters and linters (e.g., \texttt{black}, \texttt{flake8})
+\item Run fast checks locally using \texttt{pre-commit}
+\item Split unit and integration tests to reduce pipeline duration
+\item Cache dependencies to avoid redundant steps
+\item Use matrix builds to test across platforms and Python versions
+\end{itemize}
+
+%--------------------------------------------------------------------------------
+%
+%--------------------------------------------------------------------------------
+\section{CI/CD for ICON, AICON, and Anemoi}
+CI/CD enhances development workflows through automation, validation, and continuous improvement. For ML projects, these practices are essential to manage complexity, improve quality, and accelerate iteration.
+
+Both ICON and Anemoi leverage the Pre-Commit framework for linting, ensuring that developers adhere to common coding styles. Each developer is expected to install and use Pre-Commit offline, while the same hooks are executed in GitLab (ICON) and GitHub (Anemoi) CI pipelines to enforce consistency.
+
+Different model setups of ICON are used as integration tests, defined by experiment scripts that create model configuration namelists, prepare input data, and verify output data in some cases. The primary goal of each test is to ensure that the model compiles and does not crash due to software errors or numerical instability. These integration tests are mainly orchestrated by BuildBot.
+
+The Anemoi framework consists of multiple interleaved packages, each implementing unit-tests for its functionality using Pytest. Most packages provide an extra set of dependencies used only for testing. To run Pytest in an Anemoi package, follow these steps:
+
+\begin{codeonly}{Run Pytest in an Anemoi package}
+git clone https://github.com/ecmwf/anemoi-core.git
+python -m venv venv
+source venv/bin/activate
+pip install -e anemoi-core/graphs[tests]
+export CUDA_VISIBLE_DEVICES=  # disable execution on GPU
+pytest anemoi-core/graphs
+\end{codeonly}
+
+A chain of GitLab CI pipelines was set up to automatically build the AICON inference container using Kaniko and Singularity. This ensures that the container is built consistently and efficiently, reducing the risk of human error.

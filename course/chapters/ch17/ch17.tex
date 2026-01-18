@@ -1,0 +1,621 @@
+%!TEX root = ../../e-ai_ML2.tex
+%==============================================================================
+\chapter{Model Emulators, AIFS and AICON}
+\label{ch:ch17_emulators_aifs_aicon}
+
+%==============================================================================
+\section{Model emulators based on Anemoi}
+\label{sec:ch17_anemoi}
+%==============================================================================
+
+\subsection{Motivation: emulators as operational building blocks}
+
+Modern global and regional NWP models represent the atmosphere through a
+high-dimensional state vector $\mathbf{x}(t)$ on a given discretization
+(grid/mesh, vertical levels, variables).
+Time integration of a full physical model is expensive and limits resolution,
+ensemble size, and product diversity.
+
+A \emph{model emulator} aims to replace (parts of) the forecast operator by a
+learned mapping
+\[
+\mathcal{M}_{\Delta t}:\;\mathbf{x}(t)\mapsto \mathbf{x}(t+\Delta t),
+\]
+while preserving the operational semantics:
+variables, grids, metadata, GRIB workflows, and verification infrastructure.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.88\linewidth]{images/img17/nwp.png}
+\caption{Operational context: ML-based emulators accelerate the forecast step and enable
+new applications at scale while keeping operational data interfaces.}
+\label{fig:ch17_nwp}
+\end{figure}
+
+Forecasting with an emulator typically uses short-step rollout:
+\[
+\mathbf{x}_{k+1} = \mathcal{M}_{\Delta t}(\mathbf{x}_{k}),\qquad
+k=0,\dots, N-1,
+\]
+so that a forecast of length $T=N\Delta t$ is obtained as repeated application
+of the learned operator.
+
+\vspace{2mm}
+\noindent
+In practice, emulators rarely operate on a single ``field''.
+They take \emph{multi-variable, multi-level} states as input and output
+and must handle non-trivial mesh/topology.
+
+\subsection{The Anemoi framework}
+
+In Q2/2024, DWD adopted the shared \emph{Anemoi} codebase for research and development
+of data-driven NWP models, replacing its own implementation of a Graph based forecasting system for strategic reasons. Anemoi is a collaborative European initiative aligned with EUMETNET’s E-AI program.
+It provides an end-to-end workflow:
+
+\begin{itemize}
+\item dataset and I/O tooling (reanalysis / model data, Zarr, GRIB)
+\item graph construction for GNN models
+\item training drivers (PyTorch Lightning + Hydra)
+\item inference tooling and deployment interfaces
+\end{itemize}
+
+The Anemoi codebase is structured into several repositories:
+\begin{itemize}
+\item \textbf{anemoi-core:} graphs, models, training driver code
+\item \textbf{anemoi-datasets:} high-level dataset recipe handling (YAML-based)
+\item \textbf{anemoi-inference:} inference package for ML-driven prediction
+\item supporting repos (e.g.\ transforms, utilities)
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img17/anemoi_icon_overview.png}
+\caption{Conceptual overview: Anemoi as a shared framework for European ML-based weather models.}
+\label{fig:ch17_anemoi_overview}
+\end{figure}
+
+\subsection{AIFS and AICON within Anemoi: common principles}
+
+Large-scale European ML forecasting systems (AIFS at ECMWF, AICON at DWD)
+share key design choices:
+
+\begin{itemize}
+\item They treat the Earth as a graph and use a GNN as forecast operator.
+\item They learn increments / tendencies efficiently using residual connections.
+\item They rely on standardized data containers, tracking, checkpoints, and reproducibility.
+\end{itemize}
+
+A general deterministic formulation is
+\[
+[\mathbf{X}_{t-(\alpha-1)},\dots,\mathbf{X}_t]
+\;\xrightarrow{\;\;F_\theta\;\;}\;
+[\mathbf{Y}_{t+1},\dots,\mathbf{Y}_{t+\beta}],
+\]
+with input window length $\alpha$ and output window length $\beta$.
+For AICON in the referenced setup:
+\[
+\alpha = 2,\qquad \beta = 1,
+\]
+i.e.\ two input states (e.g.\ $t-3\,\mathrm{h}$ and $t$) and one predicted state
+(e.g.\ $t+3\,\mathrm{h}$). Longer lead times are produced by rollout.
+
+%==============================================================================
+\section{AIFS}
+\label{sec:ch17_aifs}
+%==============================================================================
+
+AIFS is ECMWF’s Artificial Intelligence Forecasting System, developed in the shared
+European \emph{Anemoi} framework.
+In this chapter, AIFS mainly serves as a reference point for two aspects:
+
+\begin{itemize}
+\item \textbf{Framework perspective:} AIFS and AICON share the Anemoi toolchain for
+datasets, graph-based models, training driver code and checkpoint handling.
+\item \textbf{Vertical discretization comparison:} the AICON walkthrough illustrates how
+ICON level heights (SLEVE coordinate) can be related to AIFS pressure levels
+for visualization and interpretability.
+\end{itemize}
+
+%==============================================================================
+\section{AICON}
+\label{sec:ch17_aicon}
+%==============================================================================
+
+\subsection{High-level positioning}
+
+AICON is DWD’s ML-based forecast model complementing ICON.
+It is based on Graph Neural Networks and operates natively on ICON’s triangular mesh.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.75\linewidth]{images/img17/AICON.png}
+\caption{AICON as a DWD model emulator: GNN-based forecasting on ICON meshes.}
+\label{fig:ch17_aicon_logo}
+\end{figure}
+
+\subsection{Reproducible training: driver code, configuration, logging}
+
+AICON training is driven by an Anemoi trainer configured by YAML (Hydra).
+This ensures that experiments are reproducible and traceable.
+
+A typical workflow is:
+
+\begin{enumerate}
+\item Load YAML config with Hydra
+\item Construct \texttt{AnemoiTrainer(config)}
+\item Set strategy (notebook-safe variant)
+\item Train for a configured number of steps / epochs
+\item Store checkpoints (\texttt{last.ckpt}, \texttt{inference-last.ckpt})
+\end{enumerate}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img17/aicon_logger.png}
+\caption{Example: live logging and monitoring of training progress in the AICON walkthrough.}
+\label{fig:ch17_aicon_logger}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img17/aicon_loss_curve.png}
+\caption{Training loss curve from a short AICON test run (live logger example).}
+\label{fig:ch17_aicon_loss}
+\end{figure}
+
+\begin{codeonly}{python}
+# Load YAML configuration with Hydra and create trainer
+config_filename = "test_aicon_01.yaml"
+import os, hydra
+import anemoi.training
+
+os.environ["ANEMOI_CONFIG_PATH"] = os.path.join(
+    os.path.dirname(anemoi.training.__file__), "config"
+)
+
+with hydra.initialize(version_base=None, config_path="./"):
+    config = hydra.compose(config_name=config_filename)
+
+from anemoi.training.train.train import AnemoiTrainer
+trainer = AnemoiTrainer(config)
+
+# Make the strategy notebook-compatible (single-rank view)
+class JupyterNotebookStrategy(str):
+    def __init__(self, value):
+        self.global_rank = 0
+trainer.strategy = JupyterNotebookStrategy("auto")
+
+# Set base seed for reproducibility
+os.environ["ANEMOI_BASE_SEED"] = "42"
+
+# Run a short training
+trainer.train()
+\end{codeonly}
+
+\subsection{Datasets: Zarr as scalable container}
+
+AICON training consumes reanalysis-style gridded datasets from ICON DREAM
+converted into \textbf{Zarr}.
+Zarr stores chunked, compressed multi-dimensional arrays enabling parallel I/O.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img17/dataset_xarray.png}
+\caption{Dataset inspection: AICON input in Zarr format opened via Xarray.}
+\label{fig:ch17_dataset_xarray}
+\end{figure}
+
+The dataset contains variables across multiple vertical levels; in the
+example setup, meteorological core variables include:
+\[
+P,\; QV,\; T,\; U,\; V,\; W
+\]
+at multiple ICON levels.
+
+Additionally, \emph{forcings} provide external information that is not predicted,
+including land/sea masks, topography, roughness, and time-dependent cyclic features.
+
+\subsection{Vertical levels and multi-model comparison}
+
+Vertical discretizations differ across systems.
+AICON uses ICON levels (SLEVE coordinate), while AIFS (in the referenced comparison)
+uses selected pressure levels.
+A useful diagnostic is to map ICON level heights and pressure levels into one plot.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.75\linewidth]{images/img17/icon_levels.png}
+\caption{Example visualization of ICON vertical level heights versus selected pressure levels.}
+\label{fig:ch17_icon_levels}
+\end{figure}
+
+\subsection{Hidden mesh / multi-mesh definition}
+\label{subsec:ch17_hidden_mesh}
+
+AICON’s central architectural choice is to build the GNN graph directly from ICON’s
+hierarchical triangular meshes.
+This includes:
+
+\begin{itemize}
+\item \textbf{Data mesh:} ICON cell circumcenters (where prognostic variables live)
+\item \textbf{Hidden mesh:} ICON vertices across multiple refinement levels
+\end{itemize}
+
+The grid file provides refinement level attributes
+(\texttt{refinement\_level\_v}, \texttt{refinement\_level\_c})
+from ICON’s hierarchical construction.
+Selecting vertices up to a maximum refinement level $k$ defines the hidden mesh.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img17/aicon_grid1.png}
+\caption{Refinement-level based vertex selection: subgraphs of varying density.}
+\label{fig:ch17_refinement}
+\end{figure}
+
+For an ICON grid root index $n$ and refinement $k$, the number of vertices is
+\[
+N_v = 10\,n^2\,4^k + 2,
+\]
+which matches the hidden mesh size observed in the walkthrough.
+
+Edges result from the union of coarse-to-fine edge hierarchies:
+levels $R_nB0 \dots R_nBk$.
+For icosahedral meshes, the number of undirected edges per level follows
+\[
+N_e(k) = 30\,n^2\,4^k.
+\]
+For a directed representation (PyG), the total edge count is doubled.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.88\linewidth]{images/img17/grid_visual.png}
+\caption{Hidden multi-mesh visualization: coarse-to-fine connectivity yields both
+short-range and long-range edges.}
+\label{fig:ch17_hidden_mesh}
+\end{figure}
+
+AICON thereby uses a multi-scale message passing topology similar in spirit to
+GraphCast’s multi-mesh.
+
+\subsection{Encoder--Processor--Decoder architecture on ICON graphs}
+
+AICON uses an \textbf{encoder--processor--decoder} architecture:
+
+\begin{itemize}
+\item \textbf{Encoder:} maps data-mesh features to hidden-mesh embeddings
+\item \textbf{Processor:} message passing on the hidden multi-mesh
+\item \textbf{Decoder:} maps back to data mesh and output variables
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img17/encoder_decoder.png}
+\caption{Bipartite encoder and decoder graphs: data mesh $\leftrightarrow$ hidden mesh.}
+\label{fig:ch17_encoder_decoder}
+\end{figure}
+
+A crucial detail: the encoder/decoder operate on a \emph{bipartite graph}.
+In the AICON setup every ICON cell is connected to the 3 vertices of its triangle.
+Thus the encoder degree on the source side is fixed:
+\[
+\deg_{\text{cell}} = 3.
+\]
+Conversely, vertices receive information from several cells and have varying degree.
+
+\subsection{Processor: Message Passing vs GraphTransformer}
+
+The Anemoi framework supports two main processor families:
+
+\begin{itemize}
+\item classical \textbf{message passing} graph convolution (MPNN / GraphConv)
+\item \textbf{GraphTransformer} with attention weights (GraphTransformerConv)
+\end{itemize}
+
+Message passing can be expressed as
+\[
+\mathbf{x}'_i = \gamma_\Theta\!\Bigl(\mathbf{x}_i,\;
+\bigoplus_{j\in\mathcal{N}(i)} \phi_\Theta(\mathbf{x}_i,\mathbf{x}_j,\mathbf{e}_{j,i})\Bigr),
+\]
+where $\oplus$ is an aggregation operation (sum/mean/max).
+
+GraphTransformer message passing replaces fixed adjacency normalization
+by attention coefficients:
+\[
+\mathbf{x}'_i
+= W_1\mathbf{x}_i + \sum_{j\in\mathcal{N}(i)} \alpha_{i,j}\,W_2\mathbf{x}_j,
+\]
+with
+\[
+\alpha_{i,j}=
+\text{softmax}\!\left(
+\frac{\mathbf{K}_j^\top \mathbf{Q}_i}{\sqrt{d}}
+\right),
+\]
+where $d$ is the channel dimension.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.72\linewidth]{images/img17/graph_neighbours_crop.png}
+\caption{Local graph neighborhood illustration: node updates depend on 1-hop/2-hop connectivity.}
+\label{fig:ch17_neighbors}
+\end{figure}
+
+\subsection{Attention visualization in AICON}
+
+AICON’s GraphTransformer allows interpreting \emph{which neighbors influence a node}
+via attention weights.
+In the walkthrough, attention is captured by wrapping the message function
+(monkeypatching) and extracting the attention coefficient tensor.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{images/img17/aicon_attention_graph.png}
+\caption{Attention visualization (example): attention weights on incoming edges
+for a selected receiver node.}
+\label{fig:ch17_attention_graph}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{images/img17/aicon_attention_graph2.png}
+\caption{Attention visualization variant: highlighting relative weights for a given attention head.}
+\label{fig:ch17_attention_graph2}
+\end{figure}
+
+\begin{codeonly}{python}
+# Monkeypatching the message() function to capture attention alpha
+import types, functools
+from torch_geometric.utils import softmax
+
+model = trainer.model.model.model.processor.proc[0].blocks[0].conv
+original_message = type(model).message
+
+@functools.wraps(original_message)
+def message_with_alpha(self, heads, query_i, key_j, value_j, edge_attr, index, ptr, size_i):
+    global alpha
+    if edge_attr is not None:
+        key_j = key_j + edge_attr
+    alpha = (query_i * key_j).sum(dim=-1) / self.out_channels**0.5
+    alpha = softmax(alpha, index, ptr, size_i)
+    return original_message(self, heads, query_i, key_j, value_j, edge_attr, index, ptr, size_i)
+
+model.message = types.MethodType(message_with_alpha, model)
+
+# Run one inference step to populate alpha
+alpha = None
+with torch.no_grad():
+    out = trainer.model.predict_step(input_tensor_torch)
+\end{codeonly}
+
+\subsection{Transfer learning across meshes}
+
+AICON enables transfer learning between graphs of different hidden mesh resolution.
+If the maximum hidden refinement level changes (e.g.\ from $k=3$ to $k=4$),
+some graph-dependent parameters become incompatible (node coordinates, trainable features),
+but core neural weights can be reused.
+
+This yields a practical training strategy:
+\begin{itemize}
+\item pretrain on a coarser mesh (cheap, fast)
+\item transfer weights to finer mesh
+\item continue training (higher fidelity)
+\end{itemize}
+
+%==============================================================================
+\section{Running AICON inference at DWD}
+\label{sec:ch17_aicon_inference}
+%==============================================================================
+
+Operational use requires strict control of I/O, preprocessing and product generation.
+DWD therefore provides a dedicated inference tool (\texttt{aicon-inference}),
+which differs from generic inference scripts by:
+
+\begin{itemize}
+\item robust GRIB2 handling and metadata management
+\item preprocessing and derived variables (e.g.\ soil moisture index SMI)
+\item output writing and optional interpolation onto regular lat-lon grids
+\item containerized environment for dependency control
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img17/aicon_inference_forecast.png}
+\caption{Example inference result visualization from the AICON walkthrough.}
+\label{fig:ch17_aicon_inference}
+\end{figure}
+
+\begin{codeonly}{bash}
+# Example: run inference using the dedicated command-line tool
+aicon-inference --checkpoint output_training/checkpoint/<run_id>/inference-last.ckpt \
+                --cfg inference_test01.yaml
+\end{codeonly}
+
+Internally, inference performs a rollout loop:
+\begin{codeonly}{python}
+# pseudo-code of the core loop
+torch.set_grad_enabled(False)
+with torch.no_grad():
+    for step in range(num_steps):
+        out = trainer.model.predict_step(input_tensor_torch)
+        input_tensor_torch = update_input_with_prediction(input_tensor_torch, out)
+\end{codeonly}
+
+For operational readiness, the inference tool and its dependencies are packaged
+into an Apptainer/Singularity container and deployed on the DWD GPU infrastructure.
+
+%==============================================================================
+\FloatBarrier
+\section{Further activity: Anemoi vs FRAIM}
+\label{sec:ch17_further_activity}
+%==============================================================================
+
+The European ML-for-Weather-and-Climate ecosystem currently develops along 
+several complementary lines,
+including shared model frameworks and operational integration initiatives such as
+\textbf{Anemoi}, \textbf{mfai}, \textbf{FRAIM}, and \textbf{MLCast}.
+These initiatives differ in scope and emphasis, ranging from the training and inference
+infrastructure for ML forecast engines to application ecosystems and operational
+productization.
+
+In this chapter we focus on the relationship between \textbf{Anemoi} and \textbf{FRAIM},
+since AICON is implemented in Anemoi, while FRAIM represents an integration-oriented
+ecosystem around AI components for products and services.
+
+\begin{itemize}
+\item \textbf{Forecast-model-centric development:} build and train strong ML forecast engines
+  (e.g.\ AIFS, AICON), i.e.\ the \emph{model itself}.
+\item \textbf{Application- and operations-centric integration:} build robust end-to-end workflows
+  around such models, enabling operational use, products, and tool orchestration.
+\end{itemize}
+
+In our course material, these two lines are represented by
+\textbf{Anemoi} (forecast model framework) and \textbf{FRAIM} (integration framework, products and services).
+
+%------------------------------------------------------------------------------
+\subsection{Anemoi: shared European framework for ML-based forecast engines}
+%------------------------------------------------------------------------------
+
+Anemoi is the shared European codebase for training and running ML-based weather models.
+From the AICON walkthrough perspective, Anemoi provides the complete \emph{engine room}:
+
+\begin{itemize}
+\item dataset access and recipes (Zarr, GRIB, Xarray, Earthkit)
+\item graph construction for GNN-based forecasting (ICON / icosahedral meshes)
+\item model implementations (encoder--processor--decoder, GraphTransformer)
+\item driver code for training (Hydra configuration, Lightning training)
+\item checkpointing and experiment logging (e.g.\ MLFlow)
+\item inference tooling (rollouts, postprocessing, export)
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img17/anemoi_icon_overview.png}
+\caption{Anemoi as a shared framework for European ML-based weather prediction models
+(AIFS, AICON, BRIS). It provides data handling, graph construction, training driver code
+and inference.}
+\label{fig:ch17_anemoi_ecosystem}
+\end{figure}
+
+Operationally, this means:
+\begin{quote}
+\emph{Anemoi delivers the ML forecast model stack as a reusable engine,
+including training and inference reproducibility.}
+\end{quote}
+
+%------------------------------------------------------------------------------
+\subsection{FRAIM: integration and application ecosystem around AI products and services}
+%------------------------------------------------------------------------------
+
+In contrast, the slides introduce FRAIM as a complementary framework:
+it is not primarily a forecast model training framework, but rather a system
+for integrating AI methods into operational contexts and applications.
+This includes:
+
+\begin{itemize}
+\item standardized interfaces to AI components (e.g.\ emulators, postprocessing, diagnostics)
+\item orchestration patterns for operational workflows
+\item multiple applications built around shared libraries and conventions
+\item tooling for deployment, monitoring, reproducibility and operational robustness
+\end{itemize}
+
+This viewpoint is particularly relevant in operational settings because the main difficulty
+is often not the \emph{model architecture} itself, but the integration:
+data pipelines, I/O formats, metadata handling, quality control, product generation,
+and governance.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img17/fraim1.png}
+\caption{FRAIM overview: integration framework for AI-based meteorological applications and services.}
+\label{fig:ch17_fraim1}
+\end{figure}
+
+%------------------------------------------------------------------------------
+\subsection{How Anemoi and FRAIM fit together (slide message)}
+%------------------------------------------------------------------------------
+
+The key message of the Anemoi vs.\ FRAIM slides is not competition but \textbf{complementarity}:
+
+\begin{itemize}
+\item \textbf{Anemoi answers:}
+\emph{How do we build and train ML-based forecast engines that operate on
+meteorological meshes and variables?}
+\item \textbf{FRAIM answers:}
+\emph{How do we integrate AI components into operational ecosystems and applications
+in a robust, scalable and maintainable way --- and how do we turn raw forecasts into
+usable products and services?}
+\end{itemize}
+
+From a DWD perspective this yields a clean separation of responsibilities:
+
+\begin{quote}
+\emph{AICON is an Anemoi-based forecast engine.
+FRAIM provides the broader application, product and service ecosystem in which such
+forecast engines can be orchestrated, adapted and operationally exploited.}
+\end{quote}
+
+The advantage is that forecasting model development can stay aligned with the
+shared European framework (Anemoi), while the product and application layer remains flexible
+and can evolve quickly (FRAIM).
+
+\vspace{2mm}
+\noindent
+This distinction is essential for a National Meteorological Service:
+a large fraction of operational effort is not spent on the forecast model core,
+but on \textbf{products and services} built from the model output.
+In practice, the value chain includes many steps that cannot (and should not) all be hard-coded
+into the forecasting model itself.
+
+\vspace{1mm}
+\noindent
+In practical terms, this means:
+\begin{itemize}
+\item \textbf{Anemoi/AICON:} provide physically meaningful multi-variable forecast fields
+      (including analysis-to-forecast rollouts) on the native model grid.
+\item \textbf{FRAIM:} turns raw fields into \textbf{operational products and services} by adding
+      postprocessing, derived variables, feature extraction and verification workflows, for example:
+      \begin{itemize}
+        \item road weather indices and decision support,
+        \item user-oriented evaluation and monitoring,
+        \item impact-based products (warnings, thresholds, risk indicators),
+        \item phenomena detection (storms, convection, icing, fog, extremes),
+        \item variable derivations, aggregation, interpolation, and tailored outputs.
+      \end{itemize}
+\end{itemize}
+
+%------------------------------------------------------------------------------
+\subsection{Implementation viewpoint: an ``engine + ecosystem'' architecture}
+%------------------------------------------------------------------------------
+
+A useful mental model (close to software engineering) is an \textbf{engine + ecosystem}
+architecture:
+
+\begin{itemize}
+\item \textbf{Anemoi} corresponds to the \emph{forecast engine layer}:
+data structures and formats, graph construction, ML model definitions,
+training driver code, checkpoints, and inference (including rollouts).
+It delivers \emph{raw meteorological forecast fields} on the native model grid.
+\item \textbf{FRAIM} corresponds to the \emph{platform, product and service layer}:
+interfaces, orchestration, operational lifecycle, monitoring and verification,
+as well as the generation of end-user oriented \emph{products and services}
+derived from the forecast fields.
+\end{itemize}
+
+This separation reflects the operational reality of a National Meteorological Service:
+a substantial fraction of the work and added value is created \emph{after} the raw forecast
+has been produced --- through postprocessing, derived variables, impact indicators,
+phenomena detection, and the delivery of tailored products to different user groups.
+
+The architecture is particularly powerful for European collaborations:
+forecast engine development profits from shared effort and benchmarking in a common framework,
+while product and service development remains domain-specific and can be tailored
+to national responsibilities and user needs.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.55\linewidth]{images/img17/AICON.png}
+\caption{AICON as an Anemoi-based forecast engine producing raw forecast fields.
+FRAIM complements this by providing an operational platform for orchestration as well as
+product and service generation built on top of these fields.}
+\label{fig:ch17_aicon_engine}
+\end{figure}

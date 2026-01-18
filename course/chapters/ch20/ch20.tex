@@ -1,0 +1,1267 @@
+\chapter{Learning from Observations Only}
+
+% ================================================================================
+\section{Obs-to-Obs Learning on a 2D Toy Atmosphere}
+% ================================================================================
+
+\subsection{Motivation and goal}
+
+In this section we construct a deliberately simple, fully controlled 2D dynamical
+system as a testbed for learning and forecasting directly in \emph{observation space}.
+The core variable is a tracer / heating-like scalar field
+$\phi(x,z,t)$ evolving on a rectangular domain $(x,z)\in[0,L_x]\times[0,L_z]$.
+The model is designed such that transport structures are visually plausible,
+numerically stable, and rich enough to create meaningful learning tasks.
+
+The key idea is to generate \emph{two different types of observations} from the same
+underlying field:
+\begin{itemize}
+  \item \textbf{Radiosonde-like observations (RS):}
+  sparse vertical profiles at a few selected columns.
+  \item \textbf{Satellite-like observations (SAT):}
+  vertically weighted integrated measurements for \emph{every} column.
+\end{itemize}
+This creates a typical situation from atmospheric science:
+we have sparse but detailed profile information (RS), and dense but integrated
+information (SAT).
+
+The machine learning target in this lecture is an explicit one-step forecast operator
+in observation space. Given the current observations
+$(y^{sat}_t, y^{rs}_t)$, we train a neural network to predict the next-step
+observations:
+\[
+(y^{sat}_t,\;y^{rs}_t) \;\mapsto\; (y^{sat}_{t+1},\;y^{rs}_{t+1}).
+\]
+A particularly useful aspect of the setup is that, even though the learning takes
+place in observation space, we can still reconstruct a \emph{state-like field}
+at time $t+1$: we query the trained model to generate RS-like profiles at \emph{all}
+horizontal positions, not only at the sparse radiosonde columns. This turns predicted
+observations into a spatially dense proxy state.
+
+\subsection{Toy dynamics: advection--diffusion with forcing and damping}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\textwidth]{images/img20/images_dyn/1_dyn_03.png}
+  \caption{Simulation of some atmospheric dynamics through a toy example.}
+\end{figure}
+
+The tracer/heating field $\phi(x,z,t)$ is evolved by an advection--diffusion equation
+with localized source forcing and stabilizing damping:
+\[
+\frac{\partial\phi}{\partial t}
+=
+-u\frac{\partial\phi}{\partial x}
+-w\frac{\partial\phi}{\partial z}
++K\nabla^2\phi
++A(t)\,S(x,z)
+-\lambda\,\phi
+-\lambda_{\text{top}}(z)\,\phi.
+\]
+The terms are chosen for pedagogical clarity and robust numerical behavior:
+
+\begin{itemize}
+  \item The mean wind field $(u,w)$ is fixed and points \emph{to the right and upward}.
+  This produces clearly visible transport and coherent motion of patterns.
+  \item Diffusion with constant coefficient $K$ prevents filamentation and stabilizes
+  the numerical solution.
+  \item The spatial source $S(x,z)$ represents a localized heating region
+  (bottom-left corner) that creates disturbances which are then transported.
+  \item A pulsed modulation $A(t)$ produces an intermittent forcing signal, generating
+  distinct tracer ``stripes'' that are easy to interpret in figures and time series.
+  \item Linear damping with rate $\lambda$ and an additional top sponge
+  $\lambda_{\text{top}}(z)$ prevent indefinite growth and enforce a bounded
+  statistical steady state.
+\end{itemize}
+
+Overall, the system is designed to converge to an equilibrium regime in which
+transport continuously redistributes tracer content while injection and loss
+stay approximately balanced. This regime is ideal for learning time transitions,
+because the system remains active but does not drift or explode.
+
+\subsection{Boundary conditions: periodic transport in $x$}
+
+To obtain a clean cyclic flow, the model uses \textbf{periodic boundary conditions
+in the horizontal direction}. Structures that leave the domain on the right re-enter
+from the left. This design choice is crucial: it avoids complicated outflow behavior,
+creates long-lived tracer trains, and yields recurring patterns that support learning.
+
+In the vertical direction, reflective or stabilizing boundary treatment is used,
+together with the top sponge. In combination, these boundary conditions generate a
+clean, repeatable ``toy atmosphere'' with visually plausible dynamics and minimal
+numerical artifacts.
+
+\subsection{Time stepping: RK4 implementation}
+
+Time integration is performed using a standard explicit fourth-order Runge--Kutta
+scheme (RK4). We define the right-hand side operator
+\[
+\mathrm{RHS}(\phi,t)
+=
+-u\,\partial_x\phi
+-w\,\partial_z\phi
++K\nabla^2\phi
++A(t)S(x,z)
+-(\lambda+\lambda_{\text{top}})\phi,
+\]
+and compute one time step via
+\begin{align*}
+k_1 &= \mathrm{RHS}(\phi, t),\\
+k_2 &= \mathrm{RHS}(\phi + \tfrac{1}{2}\Delta t\,k_1,\, t + \tfrac{1}{2}\Delta t),\\
+k_3 &= \mathrm{RHS}(\phi + \tfrac{1}{2}\Delta t\,k_2,\, t + \tfrac{1}{2}\Delta t),\\
+k_4 &= \mathrm{RHS}(\phi + \Delta t\,k_3,\, t + \Delta t),\\
+\phi_{\text{next}} &= \phi + \tfrac{\Delta t}{6}(k_1 + 2k_2 + 2k_3 + k_4).
+\end{align*}
+This provides a robust and accurate stepping method for the chosen toy dynamics.
+
+For lecture and training purposes, the simulation also includes a snapshot logic:
+a set of $n_{vis}$ time indices is selected uniformly in $[0,nsteps]$ and the
+corresponding 2D tracer fields are saved as numbered PNG figures. This provides
+consistent, reproducible visuals for documentation and presentation.
+
+\subsection{Budget monitoring: sanity checks for numerical stability}
+
+Even though the system is a toy model, we deliberately treat it like a miniature
+physical simulation and monitor simple global integrals. This prevents silent failure
+modes (wrong signs, unstable CFL choices, inconsistent damping, etc.) that could
+destroy the learning task without being obvious from a few images.
+
+We define the following quantities:
+\[
+C(t)=\int\phi\,dx\,dz, \qquad
+I(t)=\int A(t)S\,dx\,dz,\qquad
+L(t)=\int(\lambda+\lambda_{\text{top}})\phi\,dx\,dz.
+\]
+Here $C(t)$ measures the total tracer content (a mass/energy proxy), $I(t)$ the
+instantaneous source injection, and $L(t)$ the instantaneous loss by damping and sponge.
+
+A particularly robust diagnostic is the cumulative budget in discrete time,
+\[
+\mathrm{acc\_in}=\sum_n I(t_n)\Delta t,
+\qquad
+\mathrm{acc\_loss}=\sum_n L(t_n)\Delta t.
+\]
+In a statistically steady regime, injected and lost content become balanced:
+the total content stabilizes, and the cumulative injection and cumulative loss
+evolve with similar slope. This confirms that the model has reached a controlled
+equilibrium that is well-suited for machine learning experiments.
+
+\medskip
+\noindent
+\textbf{Practical conclusion:}
+budget diagnostics should always be part of the toy model.
+They act as a continuous stability certificate and dramatically reduce debugging
+time in later stages of the ML pipeline.
+
+
+% ================================================================================
+\subsection{Observation operators: RS profiles and SAT integrated measurements}
+% ================================================================================
+
+The purpose of this lecture is to learn a forecast step directly in
+\emph{observation space}. This requires two complementary observation types:
+
+\begin{itemize}
+  \item \textbf{RS (Radiosondes):} sparse vertical profiles of $\phi(x,z,t)$ at a few
+  selected horizontal columns $x=x_i$.
+  \item \textbf{SAT (Satellite-like):} vertically integrated, height-weighted
+  measurements for \emph{every} horizontal column $x$.
+\end{itemize}
+
+The key design idea is that both observation types are derived from the same
+underlying state field $\phi(x,z,t)$, but they represent very different views
+of the atmosphere: radiosondes give high vertical detail but only at a few locations,
+while satellite observations provide dense horizontal coverage but are vertically integrated.
+This setting is ideal for ML demonstrations: we can learn transitions in observation space,
+while still having access to the full truth field for analysis and validation.
+
+\subsubsection{Radiosonde operator (RS)}
+
+Let the model field be discretized on a grid $\phi_{i,k}(t)$ with
+horizontal index $i$ (columns) and vertical index $k$ (levels).
+Radiosonde observations are obtained by sampling a small set of columns
+$\mathcal{I}_{rs}=\{i_1,i_2,\dots,i_{n_{rs}}\}$:
+\[
+y^{rs}(t) = \Big\{\, \phi_{i,k}(t)\;:\; i\in\mathcal{I}_{rs},\;k=1,\dots,N_z \Big\}.
+\]
+Thus each RS observation is a full vertical profile, but only at a sparse set of columns.
+In the lecture figures we visualize these profiles as vertical ``sticks'' within the
+2D field.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\textwidth]{images/img20/images_obs_rs/1_x_yrs_01.png}
+  \caption{Toy atmosphere with radiosonde (RS) profiles at selected columns.
+  RS provides sparse but vertically resolved information.}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\textwidth]{images/img20/images_obs_rs/1_x_yrs_05.png}
+  \caption{RS observation snapshots at a later time: transported patterns cross the RS columns,
+  generating a clean training signal for one-step observation forecasting.}
+\end{figure}
+
+\subsubsection{Satellite operator (SAT): vertical weighted integration}
+
+Satellite-like observations are defined as integrated measurements along the vertical
+direction. For each column $x_i$ we compute a weighted integral:
+\[
+y^{sat}_i(t) = \sum_{k=1}^{N_z} w_k\,\phi_{i,k}(t),
+\qquad
+\sum_k w_k = 1,\qquad w_k\ge 0.
+\]
+The weights $(w_k)$ approximate a vertical sensitivity kernel (a ``weighting function''),
+similar to radiative transfer weighting functions used in atmospheric remote sensing.
+In our toy setup we design $w_k$ as a smooth Gaussian-like kernel centered at a mid-level
+height. This ensures that the SAT observation sees coherent transported signals
+but does not trivially reproduce the full vertical structure.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.72\textwidth]{images/img20/sat_weights.png}
+  \caption{Vertical weighting function used for SAT observations.
+  SAT provides dense horizontal coverage but only an integrated vertical view.}
+\end{figure}
+
+\subsubsection{Implementation in the notebook}
+
+The following code implements the RS and SAT observation operators.
+We keep the code explicit and simple because pedagogical clarity is more important
+than ultimate performance in this lecture.
+
+\begin{codeonly}{Notebook: Observation operators (RS and SAT)}
+import numpy as np
+
+def observe_rs(phi, rs_idx):
+    """
+    Radiosonde observations: extract vertical profiles at selected x-columns.
+
+    phi: 2D array, shape (Nx, Nz)
+    rs_idx: list/array of x-indices
+    returns: RS array, shape (n_rs, Nz)
+    """
+    return phi[rs_idx, :]
+
+def observe_sat(phi, w_z):
+    """
+    Satellite observations: height-weighted vertical integral for each x-column.
+
+    phi: 2D array, shape (Nx, Nz)
+    w_z: 1D weights, shape (Nz,), sum(w_z)=1
+    returns: SAT array, shape (Nx,)
+    """
+    return phi @ w_z
+\end{codeonly}
+
+The SAT weights can be generated as a normalized Gaussian-like kernel. The precise
+parameters are not critical; what matters is that the kernel selects a broad layer
+and remains positive and smooth.
+
+\begin{codeonly}{Notebook: SAT weight construction}
+def sat_weights(Nz, z, z0=0.55, sigma=0.12):
+    """
+    Build smooth SAT weights over vertical coordinate z in [0,1].
+
+    Nz: number of vertical levels
+    z: 1D vertical coordinate, shape (Nz,)
+    z0: centre height (0..1)
+    sigma: width
+    """
+    w = np.exp(-0.5*((z - z0)/sigma)**2)
+    w = w / np.sum(w)
+    return w
+\end{codeonly}
+
+\subsubsection{Assembling ML training pairs in observation space}
+
+For the ML task we build supervised training pairs from the simulation trajectory.
+For each time step $t$ we compute the observation vector
+\[
+y_t = (y^{sat}_t,\; y^{rs}_t)
+\]
+and train a network to predict $y_{t+1}$ from $y_t$.
+
+The next code block illustrates the dataset assembly at a high level. It produces
+two arrays \texttt{X} and \texttt{Y} where each row corresponds to one time step:
+\[
+X_n = y_t,\qquad Y_n = y_{t+1}.
+\]
+
+\begin{codeonly}{Notebook: Build training pairs}
+# phi_series: list/array of phi[t] fields, each phi[t] shape (Nx, Nz)
+# rs_idx: radiosonde column indices
+# w_z: SAT weights
+
+X_list = []
+Y_list = []
+
+for t in range(len(phi_series) - 1):
+    phi_t   = phi_series[t]
+    phi_tp1 = phi_series[t+1]
+
+    ysat_t   = observe_sat(phi_t, w_z)      # (Nx,)
+    yrs_t    = observe_rs(phi_t, rs_idx)    # (n_rs, Nz)
+
+    ysat_tp1 = observe_sat(phi_tp1, w_z)
+    yrs_tp1  = observe_rs(phi_tp1, rs_idx)
+
+    # flatten into one observation vector per time
+    y_t   = np.concatenate([ysat_t.ravel(),  yrs_t.ravel()])
+    y_tp1 = np.concatenate([ysat_tp1.ravel(), yrs_tp1.ravel()])
+
+    X_list.append(y_t)
+    Y_list.append(y_tp1)
+
+X = np.stack(X_list, axis=0)
+Y = np.stack(Y_list, axis=0)
+
+print("X shape:", X.shape, "Y shape:", Y.shape)
+\end{codeonly}
+
+\noindent
+\textbf{Resulting structure:}
+the network never sees $\phi$ directly during training.
+It learns the transition purely from the observation sequence
+$y_t \rightarrow y_{t+1}$.
+
+\medskip
+\textbf{Key message:} Even without direct state access, observation-space learning can
+encode transport dynamics, because the observation operators preserve enough information
+to carry the predictive signal.
+
+% ================================================================================
+\subsection{Learning observation-to-observation dynamics with neural networks}
+% ================================================================================
+
+After defining the truth dynamics and observation operators, we now turn to the
+machine learning component: learning a one-step transition in observation space.
+The training target is a deterministic mapping
+\[
+\big(y^{sat}_t,\;y^{rs}_t\big)\;\mapsto\;\big(y^{sat}_{t+1},\;y^{rs}_{t+1}\big),
+\]
+where SAT represents the full satellite curtain for all $x$, and RS represents a
+sparse set of radiosonde profile measurements at fixed (or variable) locations.
+
+A central aspect of this lecture is that the model is trained on observations,
+but it can still be used to recover a state-like full field at the next time step
+by querying the RS head on the entire grid. In other words: we learn in
+observation space, but we can still obtain spatially dense predictions.
+
+\subsubsection{Loading the dataset (truth and observations)}
+
+The learning notebook starts by loading a dataset generated in the previous
+dynamics notebook. It contains truth snapshots, RS observations, SAT observations,
+and the metadata describing station indices and vertical weighting functions.
+
+\begin{codeonly}{Notebook: load saved truth + observation arrays}
+import numpy as np
+
+infile = "data_dyn_obs/dyn_truth_obs.npz"
+d = np.load(infile)
+
+xtrue  = d["xtrue"]    # (time, z, x)
+yrs    = d["yrs"]      # (time, station, vert)
+ysat   = d["ysat"]     # (time, channel, x)
+t_snap = d["t_snap"]
+
+rs_ix = d["rs_ix"]     # (station,)
+rs_iz = d["rs_iz"]     # (vert,)
+sat_w = d["sat_w"]     # (channel, z)
+
+x = d["x"]             # (x,)
+z = d["z"]             # (z,)
+d.close()
+
+print("xtrue :", xtrue.shape, "(time,z,x)")
+print("yrs   :", yrs.shape,   "(time,station,vert)")
+print("ysat  :", ysat.shape,  "(time,channel,x)")
+\end{codeonly}
+
+The key point is that the notebook works with a modest number of snapshots
+(e.g. $T_{snap}=10$) but each snapshot contains dense 2D truth information.
+This is ideal for a controlled ML demonstration: we can train the model only on
+observations, but verify predictions against the full truth field.
+
+\subsubsection{Dataset switch: two RS input modes (A/B)}
+
+In a real observational setting the radiosonde network is fixed and sparse.
+However, for development and interpretability it is extremely useful to support
+two dataset modes:
+
+\begin{itemize}
+  \item \textbf{Mode A (synthetic RS from truth):} RS input points are drawn randomly
+  from the truth field $xtrue[t]$ at arbitrary $(x,z)$ locations, and realistic
+  noise is added. This produces strong geometric diversity and excellent
+  generalization capability to arbitrary RS geometries.
+
+  \item \textbf{Mode B (use only stored RS observations):} RS input points are taken
+  strictly from the saved radiosonde network $\texttt{yrs[t,:,:]}$ at fixed
+  $\texttt{rs\_ix}$ and $\texttt{rs\_iz}$. This is the strict observational setting:
+  the input uses only real observations at time $t$.
+\end{itemize}
+
+Mode B is closer to operational reality (fixed radiosonde stations). Mode A is a
+controlled training mode that mimics additional mobile or opportunistic observations
+(e.g.\ aircraft profiles), which are indeed available in real systems.
+
+\begin{codeonly}{Notebook: dataset mode switch (A/B)}
+# USER SWITCH:
+mode = "B"    # "A" = synthetic RS from truth,  "B" = stored yrs[t] only
+print("Dataset mode:", mode)
+\end{codeonly}
+
+\subsubsection{Normalization: a critical practical detail}
+
+SAT and RS observations live on different scales and have different statistics.
+Without explicit normalization, training becomes unstable and the network allocates
+capacity to trivial scale matching instead of learning dynamics.
+
+We normalize SAT \emph{per channel} over time and $x$, and we normalize truth/RS
+globally:
+\[
+y^{sat}_n = \frac{y^{sat}-\mu_{sat}}{\sigma_{sat}},
+\qquad
+x_n = \frac{x-\mu_x}{\sigma_x},
+\qquad
+y^{rs}_n = \frac{y^{rs}-\mu_x}{\sigma_x}.
+\]
+The network operates in normalized space. For plots and RMSE diagnostics we always
+de-normalize back to physical units.
+
+\begin{codeonly}{Notebook: SAT per-channel normalization + truth/RS normalization}
+# SAT: per channel normalization over time and x
+ysat_mu = ysat.mean(axis=(0, 2), keepdims=True).astype(np.float32)           # (1,nsat,1)
+ysat_sd = (ysat.std(axis=(0, 2), keepdims=True) + 1e-8).astype(np.float32)  # (1,nsat,1)
+ysat_n  = ((ysat - ysat_mu) / ysat_sd).astype(np.float32)
+
+# truth: global normalization (also for RS values)
+xtrue_mu = float(xtrue.mean())
+xtrue_sd = float(xtrue.std() + 1e-8)
+xtrue_n  = ((xtrue - xtrue_mu) / xtrue_sd).astype(np.float32)
+\end{codeonly}
+
+\subsubsection{Training data: predicting SAT(t+1) and RS(t+1) at query points}
+
+The learning task is formulated as a joint prediction problem. From time step $t$
+to $t+1$ we predict two outputs:
+
+\begin{itemize}
+  \item the full satellite curtain $\hat y^{sat}_{t+1}(c,x)$,
+  \item a radiosonde profile at arbitrary query points
+  $\hat y^{rs}_{t+1}(x_q,z_q)$.
+\end{itemize}
+
+The second output is crucial: it forces the model to produce \emph{spatially meaningful}
+predictions instead of simply reproducing the fixed radiosonde network.
+For each training example we select a query column $x_q$ and a set of heights
+$\{z_q\}$. The truth targets for these query points are taken from the truth field
+$xtrue[t+1]$.
+
+Implementation-wise this leads to a dataset returning
+\[
+(\,y^{sat}_t,\;\mathcal S^{rs}_t,\;\mathcal Q^{rs}\,)
+\;\mapsto\;
+(\,y^{sat}_{t+1},\;y^{rs}_{t+1}(\mathcal Q^{rs})\,),
+\]
+where $\mathcal S^{rs}_t$ is a set of RS input points and $\mathcal Q^{rs}$ is a
+query set.
+
+\begin{codeonly}{Notebook: build training pairs (SAT + RS queries)}
+class JointDataset(Dataset):
+    def __getitem__(self, idx):
+        t_cur = int(rng.integers(0, T-1))  # predict t+1
+
+        # SAT input/target (normalized)
+        x_sat = ysat_n[t_cur]     # (nsat,nx)
+        y_sat = ysat_n[t_cur+1]   # (nsat,nx)
+
+        # RS input points at time t
+        if mode.upper() == "A":
+            rs_in_pts = sample_rs_input_points_from_truth(t_cur, nrs_in, nvert_in)
+        elif mode.upper() == "B":
+            rs_in_pts = rs_input_points_from_saved_yrs(t_cur, add_noise=True)
+
+        # RS query profile for t+1 at arbitrary x
+        ix_query = int(rng.integers(0, nx))
+        q_xy, iz_sel = make_query_profile_coords(ix_query, nvert=nvert_q)
+
+        # truth RS at t+1 from xtrue (normalized)
+        rs_true_n = xtrue_n[t_cur+1, iz_sel, ix_query].astype(np.float32)
+
+        return x_sat, rs_in_pts, q_xy, y_sat, rs_true_n
+\end{codeonly}
+
+Because RS input sets can have variable size, we pad them in a custom collate
+function and use a binary mask to ignore padded entries. This is a typical setup
+for set-based learning in PyTorch.
+
+\subsubsection{Architecture: CNN on SAT curtain + DeepSets encoder + query decoder}
+
+The architecture is built to enforce a physically plausible coupling between
+satellite and radiosonde predictions. The fundamental modeling decision is:
+
+\begin{itemize}
+  \item SAT is a \emph{1D curtain} $y^{sat}(c,x)$: advective transport creates
+  translation-like patterns along $x$. This makes a 1D CNN a natural feature extractor.
+  \item RS inputs form an unordered set of point measurements
+  $\mathcal S=\{(x_m,z_m,y_m)\}$: order does not matter, but locations do.
+  A DeepSets encoder (permutation-invariant pooling) provides a suitable representation.
+  \item RS output is query-based: we predict a value at any $(x_q,z_q)$ by combining
+  local SAT features at $x_q$, a global latent state, and the query height $z_q$.
+\end{itemize}
+
+Thus, the model is explicitly designed such that RS inference is driven by SAT
+structure. In practice this means: the RS query head cannot invent arbitrary
+vertical profiles disconnected from the horizontal SAT features.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.88\textwidth]{images/img20/rs_rec/xpred_full_2x2_t05_to_06.png}
+  \caption{Example of full-field reconstruction at $t+1$ produced by evaluating the RS query head on the entire grid.}
+\end{figure}
+
+The forward pass is summarized by
+\[
+\hat y^{rs}_{t+1}(x_q,z_q)
+=
+g_\theta\!\big( \mathrm{CNN}(y^{sat}_t),\;
+\mathrm{Set}(y^{rs}_t),\;
+x_q,z_q \big).
+\]
+Permutation invariance is enforced by set pooling:
+\[
+e_m=\psi_\theta(x_m,z_m,y_m),\qquad
+E=\mathrm{pool}(e_1,\dots,e_N),
+\]
+where pooling can be sum/mean/max (commutative $\Rightarrow$ order-invariant).
+The location information enters through $(x_m,z_m)$ inside $\psi_\theta$.
+
+\begin{codeonly}{Notebook: joint architecture (SAT CNN + RS set encoder + RS query head)}
+class JointModel(nn.Module):
+    def forward(self, ysat_t, rs_pts, mask_in, q_xy):
+
+        # 1) encode SAT(t)
+        sat_feat_x, sat_feat_g = self.sat_enc(ysat_t)           # (B,C,nx), (B,C)
+
+        # 2) encode RS set conditioned on SAT features
+        hr = self.rs_enc(sat_feat_x, rs_pts, mask_in)           # (B,Hrs)
+
+        # 3) latent
+        h = self.lat_mlp(torch.cat([sat_feat_g, hr], dim=1))    # (B,H)
+
+        # 4) predict SAT(t+1)
+        ysat_pred = self.sat_head(h).view(-1, self.nsat, self.nx)
+
+        # 5) encode predicted SAT(t+1) for RS queries
+        sat1_feat_x, _ = self.sat_enc(ysat_pred)
+
+        # 6) RS query prediction at (x_q,z_q)
+        satq = sample_feat_1d(sat1_feat_x, q_xy[...,0])         # (B,Nq,C)
+        inp = torch.cat([satq, h[:,None,:].expand(...), q_xy[...,1,None]], dim=-1)
+        yrs_pred = self.rs_head(inp).squeeze(-1)                # (B,Nq)
+
+        return ysat_pred, yrs_pred
+\end{codeonly}
+
+\subsubsection{Training loss}
+
+Training uses a joint loss combining the SAT curtain error and the RS query error:
+\[
+\mathcal{L}=\mathcal{L}_{sat}+\alpha\,\mathcal{L}_{rs},
+\]
+where
+\[
+\mathcal{L}_{sat}
+=
+\| \hat y^{sat}_{t+1}-y^{sat}_{t+1}\|_2^2,
+\qquad
+\mathcal{L}_{rs}
+=
+\frac{1}{N_q}\sum_{q=1}^{N_q}
+\left(
+\hat y^{rs}_{t+1}(x_q,z_q) - y^{rs}_{t+1}(x_q,z_q)
+\right)^2.
+\]
+In practice, RS errors must be weighted strongly (large $\alpha$), because SAT
+contains many more values per training example. Without re-weighting, the network
+will prioritize SAT and effectively ignore RS learning.
+
+\begin{codeonly}{Notebook: training loop with joint loss}
+opt = torch.optim.Adam(model.parameters(), lr=2e-3)
+
+nepoch = 35
+w_sat = 1.0
+w_rs  = 30.0   # RS needs stronger weight
+
+for ep in range(1, nepoch+1):
+    for x_sat, rs_pts, mask_in, q_xy, y_sat, y_rs in dl:
+
+        ysat_pred, yrs_pred = model(x_sat, rs_pts, mask_in, q_xy)
+
+        loss_sat = torch.mean((ysat_pred - y_sat)**2)
+        loss_rs  = torch.mean((yrs_pred  - y_rs )**2)
+
+        loss = w_sat * loss_sat + w_rs * loss_rs
+        loss.backward()
+        opt.step()
+        opt.zero_grad(set_to_none=True)
+\end{codeonly}
+
+\subsubsection{Evaluation 1: predict an RS profile at an unseen location}
+
+A first test of generalization is to predict a radiosonde profile at a new
+horizontal location $x$ that was not part of the original RS station network.
+This checks whether the model has learned to use SAT information to drive
+RS prediction in a physically plausible way.
+
+For evaluation we take RS input strictly from stored observations $\texttt{yrs[t,:,:]}$
+(mode B), select a new unseen column index $\texttt{ix\_new}$, query all profile
+heights at that location, and compare to truth $xtrue[t+1]$.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.82\textwidth]{images/img20/rs_rec/rs_profile_pred_truth_ix002_t05_to_06.png}
+  \caption{Predicted RS profile at an unseen location (dashed) compared to truth at $t+1$ (solid).}
+\end{figure}
+
+\begin{codeonly}{Notebook: evaluation -- RS profile forecast at unseen ix\_new}
+t = 5
+ix_new = 111   # manually chosen new x-index (not in rs_ix)
+
+# build RS input from stored yrs[t]
+pts = []
+for irs in range(len(rs_ix)):
+    ix0 = int(rs_ix[irs])
+    for iv in range(len(rs_iz)):
+        iz0 = int(rs_iz[iv])
+        val_phys = float(yrs[t, irs, iv])
+        val_n = (val_phys - xtrue_mu) / xtrue_sd
+        pts.append([ix0/(nx-1), iz0/(nz-1), val_n])
+
+rs_in = np.asarray(pts, dtype=np.float32)
+
+# query profile at ix_new (same vertical grid as rs_iz)
+iz_prof = np.array(rs_iz, dtype=int)
+q_xy = np.stack([
+    np.full(len(iz_prof), ix_new/(nx-1), dtype=np.float32),
+    (iz_prof/(nz-1)).astype(np.float32)
+], axis=1)
+
+# truth target at t+1
+rs_true_n = xtrue_n[t+1, iz_prof, ix_new]
+
+# predict
+_, yrs_pred = model(x_sat, rs_pts, mask_in_t, q_xy_t)
+\end{codeonly}
+
+\subsubsection{Evaluation 2: full-field reconstruction at $t+1$ by querying everywhere}
+
+Finally, the key ``state-like'' demonstration is full-field prediction.
+We evaluate the RS query head at \emph{every grid point} $(x_i,z_j)$ and define
+\[
+x_{\mathrm{pred}}(x_i,z_j,t+1) := \hat y^{rs}_{t+1}(x_i,z_j).
+\]
+This produces a full spatial field at time $t+1$ although the model was trained
+in observation space only. We then compare $x_{\mathrm{pred}}$ to the truth
+field $xtrue[t+1]$ and visualize both as well as their difference.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.96\textwidth]{images/img20/rs_rec/xpred_full_2x2_t05_to_06.png}
+  \caption{Full-field reconstruction at $t+1$: truth at $t$, truth at $t+1$, predicted field, and prediction error.}
+\end{figure}
+
+\begin{codeonly}{Notebook: full-field prediction by RS query head at all grid points}
+# build query coords for the entire (x,z) grid
+Zg, Xg = np.meshgrid(z_norm, x_norm, indexing="ij")
+q_all = np.stack([Xg.reshape(-1), Zg.reshape(-1)], axis=1).astype(np.float32)
+
+# chunked forward pass
+pred_list = []
+for i0 in range(0, q_all.shape[0], chunk_nq):
+    q_chunk = q_all[i0:i0+chunk_nq]
+    q_xy_t = torch.tensor(q_chunk[None, ...], dtype=torch.float32, device=device)
+    _, yrs_pred = model(x_sat, rs_pts, mask_in_t, q_xy_t)
+    pred_list.append(yrs_pred[0].detach().cpu().numpy())
+
+yrs_pred_all_n = np.concatenate(pred_list, axis=0)
+xpred = (yrs_pred_all_n.reshape(nz, nx) * xtrue_sd + xtrue_mu)
+\end{codeonly}
+
+\noindent
+This experiment closes the loop of the lecture: even though we trained purely on
+observations, the model can be used as a compact emulator that produces
+state-like outputs. In more realistic scenarios the ``query everywhere'' step
+resembles reconstruction operators that map heterogeneous observations into a
+gridded analysis field, but here it emerges naturally from the obs-to-obs
+learning setup.
+
+\medskip
+\textbf{Key message:} Observation-space forecasting does not prevent state-like
+prediction --- if the network output is query-based, it can generate dense fields
+by evaluation on a grid.
+
+
+
+
+
+% ================================================================================
+\subsection{ORIGEN: iterative reconstruction and learning cycles from partial observations}
+% ================================================================================
+
+ORIGEN (\textbf{O}bservation-based \textbf{R}econstruction and \textbf{I}nversion for
+\textbf{G}enerative \textbf{E}mulation of \textbf{N}onlinear systems) is a conceptual
+framework that explicitly couples three ingredients:
+
+\begin{itemize}
+  \item \textbf{observations} (typically partial and noisy),
+  \item \textbf{reconstruction / inversion} (analysis, state estimate),
+  \item \textbf{learning of a forecast model / emulator} from reconstructed states.
+\end{itemize}
+
+The defining characteristic is that these components are not executed once, but in a
+\emph{closed learning cycle}. In each cycle, a current model is used to define a
+background trajectory, observations are used to produce a reconstructed analysis,
+and the model is then updated from the reconstructed trajectory.
+The next cycle uses the updated model, leading to a progressive refinement of both
+reconstruction quality and forecast model.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.90\textwidth]{images/img20/origen/origen_graphics.pdf}
+  \caption{ORIGEN cycle: observations $\rightarrow$ analysis reconstruction/inversion $\rightarrow$ model learning $\rightarrow$ next cycle.}
+\end{figure}
+
+In this section we demonstrate ORIGEN mechanics on a deliberately minimal example,
+chosen such that every update can be inspected analytically and visually.
+
+% ================================================================================
+\subsubsection{Minimal testbed: a 2D oscillator on a circle}
+% ================================================================================
+
+We define a ``truth'' trajectory $x_k=(x_{1,k},x_{2,k})$ with $n$ discrete time steps
+on the unit circle:
+\[
+x_k=
+\begin{bmatrix}
+\cos\theta_k\\ \sin\theta_k
+\end{bmatrix},
+\qquad
+\theta_k=\frac{2\pi k}{n},
+\qquad k=0,\dots,n-1.
+\]
+The resulting states form a simple nonlinear trajectory with a known geometry.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.55\textwidth]{images/img20/origen/origen01.png}
+  \caption{Truth trajectory $x_k$ on a circle (minimal ORIGEN example).}
+\end{figure}
+
+\begin{codeonly}{ORIGEN notebook: truth trajectory on a circle}
+nn = 10
+theta = np.linspace(0, 2*np.pi, nn, endpoint=False)
+
+xt = np.zeros((nn, 2))
+xt[:, 0] = np.cos(theta)
+xt[:, 1] = np.sin(theta)
+\end{codeonly}
+
+The purpose of this oscillator example is not to model atmospheric dynamics, but
+to provide a clean environment where partial observations lead to incomplete
+state knowledge, and where iterative reconstruction becomes visibly meaningful.
+
+% ================================================================================
+\subsubsection{Partial observations: time-dependent observation operator}
+% ================================================================================
+
+The observation at each time step is scalar and measures only one component:
+either $x_1$ or $x_2$. We introduce a selector
+\[
+s_k\in\{1,2\},
+\]
+which determines the time-dependent observation operator
+\[
+H_k =
+\begin{cases}
+  [1,0] & s_k=1 \quad (\text{observe }x_1)\\
+  [0,1] & s_k=2 \quad (\text{observe }x_2).
+\end{cases}
+\]
+The observation equation is then
+\[
+y_k = H_k\,x_k + \epsilon_k,
+\qquad
+\epsilon_k\sim\mathcal N(0,R).
+\]
+This setup mimics heterogeneous sensor availability and missing data: the system
+never observes the full 2D state at any single time step, but only a 1D projection.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\textwidth]{images/img20/origen/origen02.png}
+  \caption{Partial observations: at each time step either $x_1$ (blue) or $x_2$ (orange) is observed.}
+\end{figure}
+
+\begin{codeonly}{ORIGEN notebook: observation operator for x1 or x2}
+obs_selector = np.random.choice([1, 2], size=nn, p=[0.5, 0.5])
+y = np.where(obs_selector == 1, xt[:, 0], xt[:, 1]) + noise
+\end{codeonly}
+
+\noindent
+\textbf{Key point:} because the observations are incomplete, a single assimilation
+pass cannot reconstruct the trajectory exactly. Iteration is required to integrate
+information across time steps.
+
+% ================================================================================
+\subsubsection{3D-Var analysis step with cycling (persistence model)}
+% ================================================================================
+
+We next implement a minimal 3D-Var cycle.
+Let $x_k^b$ be the background state at time step $k$ and $x_k^a$ the analysis.
+For a single scalar observation, the 3D-Var update reads
+\[
+x_k^a = x_k^b + K_k\,(y_k - H_k x_k^b),
+\]
+where the innovation is
+\[
+d_k = y_k - H_k x_k^b,
+\]
+and the gain is
+\[
+K_k = B\,H_k^\top\left(H_k B H_k^\top + R\right)^{-1}.
+\]
+We choose for simplicity a diagonal background covariance
+\[
+B=
+\begin{bmatrix}
+\sigma_b^2(x_1) & 0\\
+0 & \sigma_b^2(x_2)
+\end{bmatrix},
+\qquad
+R=\sigma_o^2.
+\]
+The cycling rule is given by a persistence model:
+\[
+x_{k+1}^b = M(x_k^a), \qquad M(x)=x.
+\]
+Thus, any improvement in the analysis at time $k$ becomes the background for
+time $k+1$. Even though only one component is observed at each step, the repeated
+cycle allows information to accumulate over time.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.92\textwidth]{images/img20/origen/origen03.png}
+  \caption{3D-Var cycling result: background vs analysis vs truth for $x_1$ and $x_2$ time series.}
+\end{figure}
+
+\begin{codeonly}{ORIGEN notebook: 3D-Var cycle with persistence}
+for k in range(nn):
+    xb[k] = xbg
+    h = H_vec(obs_selector[k])           # selects x1 or x2
+
+    HBHt = h @ B @ h
+    K = (B @ h) / (HBHt + R)
+
+    d = y[k] - (h @ xbg)                 # innovation
+    xa[k] = xbg + K * d                  # analysis
+
+    xbg = xa[k]                          # persistence cycling
+\end{codeonly}
+
+A useful complementary visualization is obtained in state space:
+plotting $(x_1^a,x_2^a)$ reveals whether the reconstructed analysis points lie
+close to the circle.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.60\textwidth]{images/img20/origen/origen04.png}
+  \caption{State-space view: truth circle and 3D-Var analysis points colored by time step.}
+\end{figure}
+
+% ================================================================================
+\subsubsection{Sequential rounds: convergence with complete information}
+% ================================================================================
+
+To illustrate the role of information completeness, we consider two sequential
+rounds:
+
+\begin{itemize}
+  \item \textbf{Round 1:} observe $x_1$ only (for all $k$),
+  \[
+  y_k^{(1)} = x_{1,k} + \epsilon_k,
+  \]
+  \item \textbf{Round 2:} observe $x_2$ only, while using as background the
+  round-1 analyses at each time step,
+  \[
+  x_k^{b,(2)} := x_k^{a,(1)}.
+  \]
+\end{itemize}
+
+When observation noise is small, convergence is immediate: after round 1 the
+trajectory is correct in the $x_1$ component, and after round 2 it becomes correct
+in $x_2$ as well. This demonstrates the essential ORIGEN intuition:
+\emph{cycling accumulates information and reconstructs hidden components as soon
+as the missing information becomes available in later rounds.}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.80\textwidth]{images/img20/origen/origen05.png}
+  \caption{Sequential rounds: round 2 uses $x_k^{a,(1)}$ as background and completes the reconstruction.}
+\end{figure}
+
+% ================================================================================
+\subsubsection{Iterative reconstruction across many cycles}
+% ================================================================================
+
+The more realistic setting is noisy and heterogeneous observations, where the
+trajectory cannot be perfectly recovered in a single pass. We therefore iterate
+multiple cycles, each cycle producing a refined estimate of the entire sequence:
+\[
+\{x_k^{a,(c)}\}_{k=0}^{n-1}
+\;\Rightarrow\;
+\{x_k^{a,(c+1)}\}_{k=0}^{n-1}.
+\]
+In the notebook we demonstrate this by repeating assimilation for many cycles.
+The cycling mechanism is
+\[
+x_b^{(c+1)} := x_a^{(c)}.
+\]
+
+A first diagnostic is the RMSE evolution per cycle. It typically decreases as
+the reconstruction stabilizes.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.72\textwidth]{images/img20/origen/origen08.png}
+  \caption{Iterative reconstruction: RMSE per cycle (partial noisy observations).}
+\end{figure}
+
+To interpret the reconstruction geometrically, we plot the 2D trajectories over
+cycles. Later cycles approach the true circle more closely.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.70\textwidth]{images/img20/origen/origen07.png}
+  \caption{Iterative 3D-Var reconstruction in state space: selected cycles approach the truth trajectory.}
+\end{figure}
+
+Finally, a time series diagnostic of the final cycle illustrates a key property
+of variational filtering: the analysis does not overfit noisy scalar observations.
+Instead it remains a weighted compromise controlled by $B$ and $R$.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.92\textwidth]{images/img20/origen/origen09.png}
+  \caption{Final-cycle time series: truth vs reconstructed analysis, with noisy partial observations.}
+\end{figure}
+
+\noindent
+\textbf{Crucial observation:} in this minimal setup, repeated 3D-Var cycling reduces
+error, but cannot achieve full convergence under persistent partial/noisy observation
+patterns if the uncertainty model remains fixed. In other words: a static $B$ limits
+how far reconstruction can improve.
+
+% ================================================================================
+\subsubsection{Covariance update: Kalman-style uncertainty reduction and convergence}
+% ================================================================================
+
+A key step towards convergence is to update the background covariance during cycling.
+After each analysis update we also update the uncertainty, using the Kalman filter
+covariance update:
+\[
+A_k = (I - K_k H_k)\,B_k,
+\qquad
+B_k \leftarrow A_k.
+\]
+This update reduces uncertainty in observed directions. Over many cycles the gain
+therefore adapts: it becomes consistent with the observation pattern and stabilizes
+the iterative reconstruction.
+
+In the notebook this modification yields a dramatic improvement: trajectories converge
+strongly to the truth circle, RMSE decreases substantially, and the final time series
+nearly overlays the truth.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.78\textwidth]{images/img20/origen/origen10.png}
+  \caption{With covariance update: selected cycles show strong convergence towards the truth trajectory.}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.72\textwidth]{images/img20/origen/origen11.png}
+  \caption{RMSE per cycle with covariance update: uncertainty reduction stabilizes the reconstruction.}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.92\textwidth]{images/img20/origen/origen12.png}
+  \caption{Final cycle with covariance update: $x_1$ and $x_2$ trajectories converge.}
+\end{figure}
+
+\subsubsection{How this connects back to ORIGEN learning}
+
+So far, the notebook focuses on reconstruction mechanics: repeated cycling of
+analysis states from partial observations. This corresponds to the ``inversion''
+component of ORIGEN.
+
+The full ORIGEN principle now closes the loop:
+once a trajectory reconstruction $\{x_k^a\}$ is available, it can be used as
+training data for a learned forecast map
+\[
+x^a(t)\mapsto x^a(t+\Delta t).
+\]
+This yields an improved emulator (learned dynamics), which in turn produces
+better backgrounds for the next reconstruction cycle. The iterative combination
+of reconstruction and model learning is the mechanism by which ORIGEN turns sparse
+partial observation sequences into stable forecasting capability.
+
+\medskip
+\textbf{ Key message:} ORIGEN is not a one-shot DA method. It is a
+{closed iterative learning loop}:
+\[
+\text{obs} \;\Rightarrow\; \text{reconstruction} \;\Rightarrow\;
+\text{model learning} \;\Rightarrow\; \text{next cycle}.
+\]
+Even in the minimal oscillator example, we see the essential pattern:
+cycling integrates information over time, and adaptive uncertainty modeling
+(covariance update) enables convergence under partial noisy observations.
+
+
+
+% ================================================================================
+\subsection{ORIGEN on Lorenz--63: reconstruction from partial observations + learned dynamics}
+% ================================================================================
+
+The circle oscillator example in the previous section isolates the key idea of ORIGEN:
+\emph{iterative reconstruction from partial observations} becomes possible when we cycle
+analysis states and adapt uncertainty.
+We now move to a more realistic chaotic system: the classical Lorenz--63 model.
+Here ORIGEN becomes an end-to-end pipeline:
+\[
+\text{partial observations}
+\;\Rightarrow\;
+\text{iterative reconstruction}
+\;\Rightarrow\;
+\text{learned dynamics}
+\;\Rightarrow\;
+\text{forecast rollouts}.
+\]
+The notebook \texttt{ORIGEN --- Lorenz-63: Observation-based Reconstruction + Learned Dynamics}
+implements this full loop and stores all results in \texttt{origen\_l63/}.
+
+% ================================================================================
+\subsubsection{Lorenz--63 truth trajectory and partial observations}
+% ================================================================================
+
+Lorenz--63 is defined by the nonlinear ODE
+\[
+\dot x = \sigma(y-x),\qquad
+\dot y = x(\rho-z)-y,\qquad
+\dot z = xy-\beta z,
+\]
+with standard parameters $(\sigma,\rho,\beta)=(10,28,8/3)$.
+A ``truth'' trajectory $\mathbf{x}(t)=(x(t),y(t),z(t))^\top$ is generated by numerical
+integration from a fixed initial condition.
+
+Observations are formed by selecting only a subset of the three components.
+For a given choice (e.g.\ measured=\texttt{xz}), the observation equation reads
+\[
+\mathbf{y}(t_k) = H\,\mathbf{x}(t_k) + \boldsymbol\epsilon_k,
+\qquad
+\boldsymbol\epsilon_k\sim \mathcal N(0,R),
+\]
+where $H$ is a (time-independent) selector matrix, e.g.
+\[
+H_{xz}=
+\begin{bmatrix}
+1&0&0\\
+0&0&1
+\end{bmatrix}.
+\]
+The key difficulty is that the observed information is incomplete: reconstructing
+the full 3D chaotic state from partial noisy measurements requires a robust
+regularization and (in ORIGEN) iteration.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\textwidth]{images/img20/origen_l63/L63_1_truth_and_obs_example.png}
+  \caption{Lorenz--63 truth trajectory and partial noisy observations (example shown for a measured subset such as $x,z$).}
+\end{figure}
+
+% ================================================================================
+\subsubsection{3D-Var reconstruction with Gaussian background covariance}
+% ================================================================================
+
+We reconstruct the full state at each observation time using a linear 3D-Var update.
+For a given background $\mathbf{x}^b_k$ and observation $\mathbf{y}_k$ we compute the analysis
+\[
+\mathbf{x}^a_k
+=
+\mathbf{x}^b_k
++
+K_k \bigl(\mathbf{y}_k - H\mathbf{x}^b_k \bigr),
+\]
+with gain matrix
+\[
+K_k
+=
+B_k H^\top \bigl(H B_k H^\top + R\bigr)^{-1}.
+\]
+As initial uncertainty model, a symmetric Gaussian background covariance $B$ is used,
+chosen here as a smooth correlation across the three components
+(i.e.\ coupling $x,y,z$),
+\[
+(B_0)_{ij} = \sigma_b^2 \exp\!\left(-\frac{(i-j)^2}{2\ell^2}\right),
+\qquad i,j\in\{1,2,3\}.
+\]
+This makes the reconstruction non-trivial: even when only $x$ and $z$ are observed,
+the coupling encoded in $B$ allows information to leak into the unobserved component
+$y$.
+
+The simplest diagnostic is a single-pass sequential reconstruction with a fixed background
+(e.g.\ $\mathbf{x}^b_k=\mathbf{0}$), which already pulls the analysis onto a plausible
+trajectory shape but cannot fully recover the truth in chaotic regimes.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\textwidth]{images/img20/origen_l63/L63_2_a_rec_01.png}
+  \caption{Single-pass 3D-Var reconstruction for all time steps (example with measured subset).}
+\end{figure}
+
+% ================================================================================
+\subsubsection{Iterative ORIGEN reconstruction with covariance updates}
+% ================================================================================
+
+ORIGEN introduces iteration and uncertainty adaptation.
+Instead of assimilating once, we cycle multiple reconstruction iterations.
+In iteration $i$, we:
+\begin{enumerate}
+  \item draw a random observation subset (e.g.\ $x$, $y$, $z$, $xy$, $xz$, $yz$),
+  \item reconstruct an analysis trajectory $\mathbf{x}^{a,(i)}(t_k)$ with 3D-Var,
+  \item update the background: $\mathbf{x}^{b,(i+1)} \leftarrow \mathbf{x}^{a,(i)}$,
+  \item update the covariance (Kalman-style): $B^{(i+1)} \leftarrow P^{a,(i)}$.
+\end{enumerate}
+
+The covariance update is central. Using the (stable) Joseph form, the analysis covariance is
+\[
+P^a_k = (I-K_kH)B_k(I-K_kH)^\top + K_k R K_k^\top,
+\]
+and the cycle reduces background uncertainty in directions repeatedly informed by observations.
+This stabilizes the reconstruction and makes later iterations increasingly consistent.
+
+The notebook stores the reconstructed trajectories for all iterations:
+\[
+\texttt{xa\_all}[i,k,:] \approx \mathbf{x}^{a,(i)}(t_k),
+\]
+which later becomes the training set for learning dynamics.
+
+\paragraph{Sequential two-stage illustration.}
+A particularly intuitive bridge is a two-stage scheme:
+first assimilate one subset (e.g.\ $x,z$) and obtain $P^a$,
+then assimilate another subset (e.g.\ $x,y$) using the updated covariance
+$B_k \equiv P^a_k$ as uncertainty model.
+This already demonstrates how uncertainty reduction enables stronger convergence.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\textwidth]{images/img20/origen_l63/L63_2_b_rec_2_steps.png}
+  \caption{Two-stage 3D-Var reconstruction with Kalman-style covariance propagation between stages.}
+\end{figure}
+
+\paragraph{Many ORIGEN iterations.}
+In the full ORIGEN reconstruction, the observation subset varies between iterations.
+This emulates realistic heterogeneous sensing and missing data, but now embedded
+into a controlled cycling loop. The output is a sequence of refined trajectories,
+progressively constrained by accumulated information.
+
+% ================================================================================
+\subsubsection{Learning dynamics from reconstructed trajectories}
+% ================================================================================
+
+Once a sufficiently consistent reconstructed trajectory is available, ORIGEN turns
+the reconstruction output into training data for dynamics learning.
+We train a small neural network as a one-step map
+\[
+\mathbf{x}^a(k)\ \mapsto\ \mathbf{x}^a(k+1),
+\]
+i.e.\ it emulates the discrete-time flow map on the reconstructed manifold.
+
+In the notebook, the training data are drawn from a selected reconstruction iteration
+(e.g.\ iteration 20), and a compact MLP is trained with standard MSE loss.
+This yields a learned emulator that can be used for forecasting by rollout.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.55\textwidth]{images/img20/origen_l63/L63_4_train_1.png}
+  \caption{Training diagnostics of the learned one-step map on reconstructed Lorenz--63 states.}
+\end{figure}
+
+% ================================================================================
+\subsubsection{Forecast evaluation: rollouts and short forecasts}
+% ================================================================================
+
+The ultimate test of a learned dynamical model is not the one-step error, but whether
+it remains stable and consistent under repeated application.
+We therefore evaluate by:
+
+\begin{itemize}
+  \item \textbf{long rollout:} forecast the full trajectory from one initial state,
+  \item \textbf{many short forecasts:} start short rollouts from multiple analysis states
+        along the reconstructed trajectory.
+\end{itemize}
+
+The short-forecast evaluation is particularly informative: it illustrates both
+stability and local accuracy across the attractor, and it provides a simple
+visual narrative for the ORIGEN concept:
+\emph{a reconstructed trajectory becomes a training signal for a forecast model,
+which is then validated by many rollouts.}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\textwidth]{images/img20/origen_l63/L63_5_trajectory_test_2.png}
+  \caption{Rollout forecast: learned emulator (red) compared to reconstructed reference trajectory (black dashed).}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\textwidth]{images/img20/L63_6_ML_model_fc_test_2.png}
+  \caption{Short forecasts (blue) starting from reconstructed analysis states (red markers), compared to the reconstructed reference trajectory (black dashed).}
+\end{figure}
+
+\paragraph{Rollout-aware fine-tuning.}
+A known issue in learned dynamical systems is error accumulation: a one-step trained model
+can drift under rollout because it is evaluated on its own predictions.
+To mitigate this, the notebook includes an optional fine-tuning stage that adds
+a short-rollout loss term. This explicitly encourages stability of the forecast map
+under repeated application, which substantially improves the qualitative behavior
+of rollouts.
+
+% ================================================================================
+\subsubsection{ORIGEN summary on Lorenz--63}
+% ================================================================================
+
+The Lorenz--63 experiment demonstrates the full ORIGEN principle in a compact setting:
+
+\begin{itemize}
+  \item \textbf{Reconstruction:} repeated 3D-Var with adaptive covariance integrates partial noisy observations
+        into a consistent full-state trajectory.
+  \item \textbf{Learning:} reconstructed trajectories provide training data for an emulator of nonlinear dynamics.
+  \item \textbf{Forecasting:} the emulator is validated by rollout-based tests, including many short forecasts.
+\end{itemize}
+
+\noindent
+\textbf{ Key message:}
+ORIGEN provides a closed learning cycle that transforms incomplete observations into
+a learned forecast model:
+\[
+\text{observations}
+\;\Rightarrow\;
+\text{iterative reconstruction + uncertainty update}
+\;\Rightarrow\;
+\text{learned dynamics}
+\;\Rightarrow\;
+\text{forecast rollouts}.
+\]

@@ -1,0 +1,792 @@
+%!TEX root = ../../e-ai_ML2.tex
+\chapter{AI Data Assimilation}
+
+\FloatBarrier
+%==============================================================================
+%
+%==============================================================================
+\section{Introduction to AI-based Data Assimilation}
+
+In the rapidly advancing field of Numerical Weather Prediction (NWP), the integration of observational data into numerical models is fundamental to achieving high-quality forecast accuracy. This process, known as \textit{data assimilation}, combines observed data with model outputs to improve initial conditions and refine forecast predictions. Data assimilation techniques have evolved significantly over the years, with traditional methods such as \textit{variational data assimilation (3D-Var)}, \textit{ensemble Kalman filters (EnKF)}, and \textit{particle filters} serving as the backbone of current NWP systems. These methods rely heavily on computational models to assimilate data and refine predictions, ensuring that weather forecasting remains reliable and precise.
+
+Today, in the time of AI, we have two approaches to using observations. One approach is the direct integration of observations into the neural networks for forecasting, i.e. observations are used either additional or as only input for calculating a forecast based on neural network architectures. The second approach is to use observations to calculate an analysis minimizing a functional with a particular loss function motivated from Bayesian arguments. This reflects a traditional data assimilation approach, but now carried out with AI/ML based neural architectures. The AI-Var of Keller and Potthast is one of these algorithms, compare \url{https://arxiv.org/abs/2406.00390}. 
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.7\textwidth]{images/img18/aivar3.png}
+\caption{Classical data assimilation cycle, where observations and the first guess are integrated to generate an analysis. The cycle continues with model runs and updates based on new observations.}
+\end{figure}
+
+\FloatBarrier
+%------------------------------------------------------------------------------
+%
+%------------------------------------------------------------------------------
+\subsection{AI-Based Methods for Data Assimilation}
+
+The emergence of AI, particularly deep learning, presents an exciting opportunity to enhance the capabilities of NWP systems. AI-based models have shown the potential to emulate complex physical calculations traditionally handled by numerical models. Notably, AI can dramatically reduce computational costs, thereby speeding up data assimilation and forecasting processes. The primary advantage of AI in NWP is its ability to learn complex relationships from large datasets, allowing for faster and more flexible predictions.
+
+The main objective of using AI in NWP is to create more efficient models that can predict weather outcomes with minimal computational overhead. This is for example accomplished by training deep learning models to replicate the processes typically used in traditional numerical models, such as simulating atmospheric dynamics, computing forecast scenarios, and applying corrections through assimilation.
+
+%------------------------------------------------------------------------------
+%
+%------------------------------------------------------------------------------
+\subsection{AI-based Variational Data Assimilation (AI-Var)}
+
+In this tutorial, we introduce the concept of \textit{AI-based variational data assimilation} (AI-Var), a novel approach that aims to replace traditional data assimilation techniques with AI-driven models. Unlike hybrid methods that combine machine learning with classical approaches, AI-Var fully integrates the data assimilation process into a neural network. The neural network is trained to minimize a cost function that mirrors the variational assimilation framework.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.7\textwidth]{images/img18/aivar2.png}
+\caption{The AI-Var method within the broader context of data assimilation methods. AI-Var is a part of variational methods, which include 3D-Var, 4D-Var, and EnVar, all of which belong to the family of Data Assimilation (DA) methods.}
+\end{figure}
+
+The standard variational data assimilation process (such as 3D-Var) seeks to minimize the following cost function:
+
+\[
+J(\mathbf{x}) = \frac{1}{2} (\mathbf{x} - \mathbf{x}_b)^T \mathbf{B}^{-1} (\mathbf{x} - \mathbf{x}_b) + \frac{1}{2} (\mathbf{y} - \mathbf{H}(\mathbf{x}))^T \mathbf{R}^{-1} (\mathbf{y} - \mathbf{H}(\mathbf{x}))
+\]
+
+In this cost function:
+- \( \mathbf{x}_b \) is the background state (first guess),
+- \( \mathbf{y} \) are the observations,
+- \( \mathbf{B} \) is the background error covariance matrix,
+- \( \mathbf{R} \) is the observation error covariance matrix,
+- \( \mathbf{H}(\mathbf{x}) \) is the observation operator, which maps the model state to the observation space.
+
+The neural network is trained to minimize this cost function, but without relying on pre-existing analysis datasets. Instead, it learns the mapping from input data (observations and first guess) directly to the analysis, making it a fully data-driven system.
+
+%------------------------------------------------------------------------------
+%
+%------------------------------------------------------------------------------
+\subsection{Conceptual Framework for AI-Var}
+
+The AI-Var method integrates the data assimilation process into the structure of a neural network. Rather than relying on classical analysis methods, AI-Var learns to predict the analysis directly from the input data.
+
+
+The approach can be illustrated conceptually as follows:
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.7\textwidth]{images/img18/aivar1.png}
+\caption{Conceptual framework for AI-based data assimilation, where the classical data assimilation process is replaced by a neural network that learns the analysis directly from the observations and first guess.}
+\end{figure}
+
+In this figure, the input data consists of the first guess (\( \mathbf{x}_b \)) and the observations (\( \mathbf{y} \)). Further, the neural network learns the functional relationship between these inputs and the desired analysis (\( \mathbf{x}_a \)). The neural network is trained to minimize the variational cost function, ensuring that the analysis \( \mathbf{x}_a \) is as close as possible to the optimal state based on the observations. The analysis $x_{a}$ is not needed for this training process, such that we can retrain without calculating reanalysis fields beforehand. 
+
+%=\*80
+% AI-Var Training and Loss Function
+%=\*80
+
+%------------------------------------------------------------------------------
+%
+%------------------------------------------------------------------------------
+\subsection{AI-Var Training and Loss Function}
+
+The key to AI-Var is training a neural network to minimize the cost function defined earlier. The cost function can be directly used as the loss function for training the model. Instead of training on the predefined analysis states, the neural network learns to minimize the difference between the background state and the observations, incorporating the error covariances directly into the training process.
+
+The loss function in AI-Var becomes:
+
+\[
+L = (\hat{\mathbf{x}} - \mathbf{x}_b)^T \mathbf{B}^{-1} (\hat{\mathbf{x}} - \mathbf{x}_b) + (\hat{\mathbf{y}} - \mathbf{y})^T \mathbf{R}^{-1} (\hat{\mathbf{y}} - \mathbf{y})
+\]
+
+where: \( \hat{\mathbf{x}} \) is the output of the neural network (the predicted analysis), and \( \hat{\mathbf{y}} = \mathbf{H}(\hat{\mathbf{x}}) \) is the model equivalent of the predicted analysis.
+
+This formulation allows for the direct integration of the data assimilation process into a deep learning framework, providing a computationally efficient and flexible alternative to traditional methods.
+
+
+In conclusion, the AI-Var approach presents a promising alternative to traditional data assimilation techniques. By integrating the data assimilation process into a neural network, AI-Var can potentially improve computational efficiency and accuracy in weather forecasting. The initial results from both idealized and real-world test cases demonstrate the feasibility of replacing classical data assimilation systems with AI-driven models. Future work will focus on further refining the AI-Var method, including the use of more advanced neural network architectures and exploring the application of AI in high-dimensional, real-world weather prediction scenarios.
+
+
+\FloatBarrier
+%==============================================================================
+\section{Worked Example: 1D Inversion and AI-Var Learning}
+%==============================================================================
+
+This section walks through the first practical examples of Lecture~18.
+We follow the two scripts
+\texttt{1\_Inversion\_1D.py} and \texttt{2\_AI-VAR\_1d.py},
+and interpret the output through the figures produced in \texttt{images/img18/}.
+
+%------------------------------------------------------------------------------
+\subsection{Example A: 1D inversion with classical 3D-Var (\texttt{1\_Inversion\_1D.py})}
+%------------------------------------------------------------------------------
+
+\paragraph{Setup.}
+We consider a 1D periodic grid and construct:
+\begin{itemize}
+  \item a smooth truth signal $x_{\text{true}}$,
+  \item an imperfect background $x_b$,
+  \item sparse noisy observations $y = Hx_{\text{true}} + \varepsilon$.
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img18/1d_xt_xb_obs.png}
+\caption{Truth, background, and sparse point observations for the 1D inversion test case.}
+\label{fig:l18_1d_xt_xb_obs}
+\end{figure}
+
+\paragraph{Observation operator.}
+Observations are point values at selected grid indices. This is encoded by a
+linear observation operator $H$ (subsampling matrix), such that
+\[
+y \approx H x_{\text{true}}.
+\]
+A useful sanity check is comparing the observation vector $y$ to $Hx_b$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img18/1d_xt_y_xb_Hxb.png}
+\caption{Observation operator check: innovation $d = y - Hx_b$ is the driver of the DA update.}
+\label{fig:l18_1d_xt_y_xb_Hxb}
+\end{figure}
+
+\paragraph{3D-Var analysis update.}
+At each cycle we compute the 3D-Var analysis
+\[
+x_a
+=
+x_b + K\,(y - Hx_b),
+\qquad
+K = B H^\top (H B H^\top + R)^{-1}.
+\]
+Here $B$ is the background covariance matrix and $R$ is the observation error covariance.
+In this 1D toy setup, $R$ is typically diagonal (uncorrelated obs errors).
+
+\paragraph{Core code: one analysis step.}
+The key part of \texttt{1\_Inversion\_1D.py} can be summarized as:
+
+\begin{codeonly}{python}
+# innovation
+d = y - H @ xb
+
+# Kalman/3D-Var gain
+K = B @ H.T @ np.linalg.inv(H @ B @ H.T + R)
+
+# analysis update
+xa = xb + K @ d
+\end{codeonly}
+
+\paragraph{Role of the $B$ matrix.}
+The background covariance controls how far observation information spreads to
+unobserved grid points. A common choice is a Gaussian correlation kernel:
+\[
+B_{ij} = \sigma_b^2 \exp\!\left(-\frac{|i-j|^2}{2L^2}\right).
+\]
+This leads to a smooth, spatially coherent increment.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.75\textwidth]{images/img18/1d_B_matrix.png}
+\caption{Example of a Gaussian $B$ matrix used for 1D inversion: nearby grid points are strongly correlated.}
+\label{fig:l18_1d_B_matrix}
+\end{figure}
+
+\paragraph{Reconstruction result.}
+The analysis $x_a$ combines the large-scale structure of $x_b$ with the pointwise corrections from $y$,
+while remaining smooth due to the covariance constraints.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img18/1d_xa_3dvar.png}
+\caption{Classical 3D-Var inversion result: reconstructed analysis $x_a$ compared to truth and background.}
+\label{fig:l18_1d_xa_3dvar}
+\end{figure}
+
+\paragraph{Multiple cycles.}
+The script also demonstrates cycling: after the first analysis, one can use
+\[
+x_b \leftarrow x_a
+\]
+and repeat the update. This shows how iterative DA gradually reduces remaining errors.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img18/1d_multiple_01.png}
+\caption{Iterative 3D-Var cycling: repeated assimilation reduces the error compared to truth.}
+\label{fig:l18_1d_multiple_01}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img18/1d_multiple_rec.png}
+\caption{Summary reconstruction after multiple 3D-Var cycles.}
+\label{fig:l18_1d_multiple_rec}
+\end{figure}
+
+
+
+\FloatBarrier
+%------------------------------------------------------------------------------
+\subsection{Example B: Learning the inversion map (AI-Var 1D, \texttt{2\_AI-VAR\_1d.py})}
+%------------------------------------------------------------------------------
+
+\paragraph{Idea.}
+Instead of explicitly building and inverting the gain expression in every case,
+we train a neural network to emulate the analysis mapping:
+\[
+(x_b,\,y)\ \mapsto\ x_a.
+\]
+Conceptually, AI-Var learns a \emph{differentiable solver surrogate} for the DA update.
+
+A typical architecture in this toy setup is an MLP that receives as input:
+\begin{itemize}
+  \item background $x_b$ (full field),
+  \item observations $y$ (sparse values),
+  \item optionally observation mask / indices (so the network knows which points are observed).
+\end{itemize}
+
+\paragraph{Training data generation.}
+Training samples are generated by repeatedly:
+\begin{enumerate}
+  \item drawing a random truth field,
+  \item generating a background field,
+  \item sampling sparse noisy observations,
+  \item computing the classical 3D-Var analysis $x_a$ (as ground truth target).
+\end{enumerate}
+
+\paragraph{Core code structure (simplified).}
+The workflow in \texttt{2\_AI-VAR\_1d.py} follows the pattern:
+
+\begin{codeonly}{python}
+# training data creation
+xb, y = make_background_and_obs(...)
+xa_target = three_dvar_analysis(xb, y, H, B, R)
+
+# NN forward: predicted analysis
+xa_pred = net(xb, y, mask)
+
+# training
+loss = mse(xa_pred, xa_target)
+loss.backward()
+optimizer.step()
+\end{codeonly}
+
+\paragraph{Result: NN reconstruction.}
+After training, the neural network can produce an analysis field that is close to the classical 3D-Var
+solution (and thus also close to the truth), but with a forward pass instead of explicit DA algebra.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img18/1d_xa_MLP.png}
+\caption{AI-Var 1D: neural network reconstruction compared to background and truth.}
+\label{fig:l18_1d_xa_mlp}
+\end{figure}
+
+\paragraph{What is learned?}
+The key point is that the network implicitly learns:
+\begin{itemize}
+  \item how to spread sparse innovations spatially (a learned analogue of $B$),
+  \item how strongly to trust observations (a learned analogue of balancing $B$ vs $R$),
+  \item how to combine these factors across many random training cases.
+\end{itemize}
+
+\paragraph{Connection to the AI-Var loop.}
+This 1D experiment is the smallest working prototype of the AI-Var strategy:
+\[
+\text{(DA solver)}\Rightarrow \text{generate training targets}
+\Rightarrow \text{train differentiable surrogate}
+\Rightarrow \text{use surrogate inside iterative DA loops.}
+\]
+
+
+\paragraph{Optional: interpreting the learned ``implicit covariance''.}
+In later experiments, AI-Var can be linked back to covariance structures by comparing
+increments and learned sensitivities. The lecture also provides reference visualizations
+for classical $B$-matrices in the AI-Var context.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.72\textwidth]{images/img18/aivar_B_matrix.png}
+\caption{Illustration of a $B$-matrix concept in the AI-Var context (interpretation aid).}
+\label{fig:l18_aivar_B_matrix}
+\end{figure}
+
+
+
+\FloatBarrier
+%------------------------------------------------------------------------------
+\subsection{Example C: 2D assimilation and learned reconstruction (\texttt{3\_assimilation\_2d.py})}
+%------------------------------------------------------------------------------
+
+We now extend the previous 1D inversion idea to a minimal 2D field.
+This example is intentionally small but already contains the key ingredients of
+operational DA problems:
+\begin{itemize}
+  \item a spatially structured state $x(x,z)$,
+  \item heterogeneous observations (different types / locations),
+  \item a covariance model that propagates information into unobserved regions,
+  \item and a neural surrogate that learns the reconstruction mapping.
+\end{itemize}
+
+%------------------------------------------------------------------------------
+\paragraph{2D truth and geometry.}
+
+The script \texttt{3\_assimilation\_2d.py} constructs a synthetic 2D ``truth'' field
+on a rectangular grid.
+You can think of this as a tiny atmosphere slice with two coordinates $(x,z)$:
+\[
+x \in [0,L_x],\qquad z\in [0,L_z],\qquad
+\mathbf{x}\in\mathbb{R}^{n_x\times n_z}.
+\]
+The goal is: reconstruct the full 2D field from sparse, partial observations.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{images/img18/2d_setup.png}
+\caption{2D toy setup: synthetic truth field on an $(x,z)$ grid.}
+\label{fig:l18_2d_setup}
+\end{figure}
+
+%------------------------------------------------------------------------------
+\paragraph{Observation types and incomplete coverage.}
+
+In a 2D field, observations can be placed in many different ways:
+\begin{itemize}
+  \item point observations at irregular locations,
+  \item vertical profiles,
+  \item integrated column observations,
+  \item local averages, etc.
+\end{itemize}
+
+In the toy example, we construct a small set of observation locations and compare
+them to the underlying truth field.
+The observation operator $H$ is still linear, but it now maps
+\[
+H:\mathbb{R}^{n_x n_z} \rightarrow \mathbb{R}^m,
+\]
+where the 2D field is flattened into a vector.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\textwidth]{images/img18/2d_obs_comp.png}
+\caption{Observation layout and comparison to truth. Only a small subset of the full field is observed.}
+\label{fig:l18_2d_obs_comp}
+\end{figure}
+
+%------------------------------------------------------------------------------
+\paragraph{Background and covariance model in 2D.}
+
+As before, the DA step combines:
+\begin{itemize}
+  \item a background field $x_b$,
+  \item observations $y$,
+  \item and the covariance balance expressed via $(B,R)$.
+\end{itemize}
+
+The difference is that in 2D the covariance structure becomes more visible:
+\[
+B_{ij} \text{ encodes correlation between two grid points } (x_i,z_i)\text{ and }(x_j,z_j).
+\]
+Even a simple Gaussian kernel in 2D already spreads observation information in a
+physically meaningful neighborhood.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.70\textwidth]{images/img18/2d_B.png}
+\caption{Example 2D covariance structure: correlations decay with distance. This controls smoothing and information spread.}
+\label{fig:l18_2d_B}
+\end{figure}
+
+%------------------------------------------------------------------------------
+\paragraph{Classical 3D-Var analysis in 2D.}
+
+The 3D-Var analysis is computed in exactly the same form as in 1D:
+\[
+\mathbf{x}_a
+=
+\mathbf{x}_b + K\,(y - H\mathbf{x}_b),
+\qquad
+K = B H^\top (HBH^\top + R)^{-1}.
+\]
+
+In practice, the 2D example uses a smaller grid so the algebra can be performed
+explicitly. (In realistic systems, $K$ is never formed explicitly; instead one solves
+the equivalent minimization problem iteratively.)
+
+A compact skeleton of the analysis update remains:
+
+\begin{codeonly}{python}
+# innovation
+d = y - H @ xb
+
+# gain
+K = B @ H.T @ np.linalg.inv(H @ B @ H.T + R)
+
+# analysis (vectorized field)
+xa = xb + K @ d
+\end{codeonly}
+
+%------------------------------------------------------------------------------
+\paragraph{Learning the 2D inversion map with an MLP.}
+
+As in the 1D AI-Var example, we can train a network to approximate
+\[
+(x_b,y)\mapsto x_a,
+\]
+but now the target is a \emph{2D field reconstruction}.
+
+The important conceptual point is:
+\begin{quote}
+The network is not learning the dynamics here.
+It learns the \emph{inverse problem mapping} from partial observations to a full state.
+\end{quote}
+
+The script creates many random 2D cases and uses classical 3D-Var analyses as training targets.
+
+%------------------------------------------------------------------------------
+\paragraph{Comparison: NN vs 3D-Var reconstruction.}
+
+A highly instructive plot is the direct side-by-side comparison:
+\begin{itemize}
+  \item classical 3D-Var analysis,
+  \item NN reconstruction (AI-Var surrogate),
+  \item difference patterns (what the NN struggles with / where it generalizes well).
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{images/img18/2d_xa_MLP_xa_3dVAR.png}
+\caption{2D reconstruction: NN (AI-Var) vs classical 3D-Var analysis. This is the first ``real'' spatial field inversion example.}
+\label{fig:l18_2d_xa_mlp_vs_3dvar}
+\end{figure}
+
+
+%------------------------------------------------------------------------------
+\paragraph{Interpretation: what this example teaches.}
+
+This 2D experiment adds two important messages beyond the 1D inversion:
+
+\vspace{1mm}
+\textbf{(1) Covariance becomes geometry.}
+In 2D, $B$ is not just a smoothing matrix.
+It defines the geometry of how information travels from observed to unobserved regions.
+
+\vspace{1mm}
+\textbf{(2) AI-Var learns structured spatial interpolation.}
+The MLP effectively learns a data-driven reconstruction rule:
+\begin{itemize}
+  \item observation increments at sparse locations,
+  \item spatial propagation into missing regions,
+  \item regularization consistent with the training distribution.
+\end{itemize}
+
+In later parts of the lecture this idea becomes crucial:
+\[
+\text{``reconstruct state''} \Rightarrow \text{``learn from reconstructed state''}.
+\]
+
+
+\FloatBarrier
+
+
+%==============================================================================
+\section{AI Particle Filter (AIPF): Learning a Posterior Particle Distribution}
+%==============================================================================
+
+\subsection{Motivation: Why particle filters in AI-based DA?}
+
+In the previous sections we focused on AI-Var, i.e. learning the mapping
+from background state and observations to a \emph{single} analysis field.
+This is a natural continuation of 3D-Var and 4D-Var.
+
+However, many geophysical data assimilation problems involve \emph{non-Gaussian}
+posterior distributions:
+\begin{itemize}
+  \item multi-modal posteriors (ambiguities in dynamics or sparse observations),
+  \item strongly nonlinear observation operators,
+  \item strong nonlinearity in the forecast model.
+\end{itemize}
+
+In such cases, the correct target is not only an analysis mean, but a
+\emph{posterior distribution}
+\[
+p(x_n \mid y_{1:n}),
+\]
+and this motivates particle filter ideas.
+
+The key message of this tutorial section is:
+\begin{quote}
+AI-Var learns the analysis \emph{state}.
+AIPF learns the analysis \emph{distribution}.
+\end{quote}
+
+\subsection{Filtering formulation and particle representation}
+
+We consider a sequential estimation setup.
+At assimilation time $n$, the state is $x_n\in\mathbb{R}^d$
+and we observe
+\[
+y_n = H(x_n) + \varepsilon_n,
+\qquad
+\varepsilon_n\sim\mathcal{N}(0,R).
+\]
+
+The sequential Bayesian filtering target is the posterior
+\[
+p(x_n\mid y_{1:n}).
+\]
+
+A particle filter approximates the distribution by an ensemble
+\[
+X_n = \{x^{(i)}_n\}_{i=1}^N.
+\]
+In classical particle filters, the update step typically relies on
+resampling, MCMC moves, or importance weighting.
+
+In this tutorial we use a different perspective:
+we \emph{learn} a transformation that maps a prior ensemble
+to a posterior ensemble.
+
+\subsection{Core idea: a learned particle update}
+
+Let $X_n^b$ denote the background (forecast) ensemble.
+The AIPF defines the analysis ensemble by a neural update
+\[
+X_n^a = \mathcal{N}_\theta\!\left(X_n^b,\; y_n\right),
+\]
+where $\mathcal{N}_\theta$ is a neural network with parameters $\theta$.
+
+This has two immediate implications:
+\begin{itemize}
+  \item the analysis step becomes \emph{inference} (one forward pass),
+  \item the output is an ensemble that represents the posterior.
+\end{itemize}
+
+In our demonstration the state dimension is small ($d=3$),
+but the formulation naturally extends to larger dimensional systems.
+
+\subsection{Example setup: Lorenz-63 filtering experiment}
+
+We test the AIPF concept on Lorenz-63.
+The state is
+\[
+x = (x_1,x_2,x_3) \in \mathbb{R}^3,
+\]
+and we observe only a subset (e.g. $y=(x_1,x_2)$) with additive noise.
+
+Additionally, the forecast model is deliberately biased or wrong.
+This is a realistic stress test: the analysis update must compensate
+for model mismatch.
+
+Figure~\ref{fig:aipf_l63} illustrates the role of the AIPF in the Lorenz-63 loop.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\textwidth]{images/img18/lorenz63_aipf.png}
+\caption{Lorenz-63 assimilation demo used for the AI particle filter section.}
+\label{fig:aipf_l63}
+\end{figure}
+
+\FloatBarrier
+
+\subsection{Permutation invariance: DeepSets update network}
+
+A particle ensemble is an \emph{unordered set}.
+Therefore, the update operator must be permutation invariant:
+reordering the particles must simply reorder the outputs, but not change
+the analysis distribution.
+
+Formally, for any permutation $\pi$:
+\[
+\mathcal{N}_\theta(\pi X^b,\; y)=\pi\,\mathcal{N}_\theta(X^b,\; y).
+\]
+
+This tutorial implements the update using a DeepSets-style architecture.
+The structure is:
+\begin{enumerate}
+  \item compute an embedding for each particle together with the observation,
+  \item pool embeddings across particles (mean pooling),
+  \item build a global context vector,
+  \item compute a particle-wise update conditioned on both local and global information.
+\end{enumerate}
+
+Conceptually:
+\[
+\phi(x_i,y) \rightarrow \text{pool} \rightarrow \rho(\cdot)
+\rightarrow \psi(x_i,\text{context},y),
+\]
+and the network outputs increments $\Delta x_i$ so that
+\[
+x_i^a = x_i^b + \Delta x_i.
+\]
+
+This achieves the required permutation symmetry while enabling
+interaction between particles via the pooled context.
+
+\subsection{Gaussian mixture view: particles define a density}
+
+To train the network as a \emph{distribution transform}, we interpret
+an ensemble as a Gaussian mixture density.
+Given particles $X=\{x^{(i)}\}$ and a fixed kernel covariance $\Sigma$:
+\[
+q(x\mid X)
+=
+\frac{1}{N}\sum_{i=1}^N \mathcal{N}(x\mid x^{(i)},\Sigma).
+\]
+
+Thus:
+\begin{itemize}
+  \item forecast ensemble $X^b$ induces a prior mixture $q^b(x)$,
+  \item analysis ensemble $X^a$ induces an analysis mixture $q^a_\theta(x)$.
+\end{itemize}
+
+Training now becomes a density-matching problem:
+make the analysis mixture approximate the Bayesian posterior induced by
+prior and likelihood.
+
+\subsection{Training objective: likelihood + posterior-mass fit}
+
+The AIPF training objective has two components.
+
+\paragraph{(A) Observation likelihood term.}
+Particles should explain the observation.
+Under Gaussian observation noise (as in the code), we compute the
+log-likelihood of each analysis particle and aggregate across particles:
+\[
+L_{\rm obs}
+=
+-\log\left(
+\frac1N\sum_{i=1}^N p(y\mid x_i^a)
+\right).
+\]
+
+This term alone encourages particles to match the observation, but it does
+\emph{not} enforce a consistent posterior distribution.
+
+\paragraph{(B) Distribution fitting term (Gaussian mixture KL).}
+To enforce posterior consistency, we compare the analysis mixture to a
+target posterior mixture.
+
+The code discretizes the comparison by using evaluation points
+\[
+Z = \{z_k\}_{k=1}^K,
+\]
+constructed from a single Kalman-style proposal step applied to the forecast
+particles. This yields stable evaluation points near the posterior mass.
+
+The target posterior weights on $Z$ are defined by Bayes rule:
+\[
+w^\star_k
+=
+\frac{q^b(z_k)\;p(y\mid z_k)}
+     {\sum_{\ell=1}^K q^b(z_\ell)\;p(y\mid z_\ell)}.
+\]
+
+Next, the analysis mixture is evaluated on the same points and normalized:
+\[
+\pi_{\theta,k}
+=
+\frac{q^a_\theta(z_k)}
+     {\sum_{\ell=1}^K q^a_\theta(z_\ell)}.
+\]
+
+Finally, the distribution mismatch is measured by discrete KL divergence:
+\[
+L_{\rm GM}
+=
+\mathrm{KL}(w^\star\;\|\;\pi_\theta)
+=
+\sum_{k=1}^K w^\star_k\;
+\log\frac{w^\star_k}{\pi_{\theta,k}}.
+\]
+
+\paragraph{Combined loss.}
+The full objective is
+\[
+L = L_{\rm obs} + \lambda_{\rm bg}\,L_{\rm GM},
+\]
+where $\lambda_{\rm bg}$ controls the strength of the distribution-matching
+(background) term.
+
+This corresponds exactly to the implementation in the Gaussian-mixture
+training script.
+
+\subsection{Geometry of the update: prior ensemble $\rightarrow$ analysis ensemble}
+
+The learned update is best understood visually by plotting particles in a
+2D slice of state space (e.g. $x_1$--$x_2$ plane).
+Figure~\ref{fig:aipf_scatter} shows:
+\begin{itemize}
+  \item the prior forecast ensemble $X^b$,
+  \item observation and truth markers,
+  \item the analysis ensemble $X^a$ after the neural update.
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\textwidth]{images/img18/f_ensemble_scatter_step_0022.png}
+\caption{Ensemble geometry in a 2D slice: forecast particles (prior) transformed
+into analysis particles by the learned AIPF update.}
+\label{fig:aipf_scatter}
+\end{figure}
+
+\FloatBarrier
+
+This plot captures the essence of the method:
+instead of resampling, the network moves the particle cloud in a structured,
+posterior-aware way.
+
+\subsection{Ablation experiment: why the background term matters}
+
+A key point in this tutorial is that the distribution fitting term $L_{\rm GM}$
+is essential.
+
+Two networks are trained:
+\begin{itemize}
+  \item \texttt{net}: trained with full loss $L_{\rm obs} + \lambda_{\rm bg}L_{\rm GM}$,
+  \item \texttt{net\_obs}: trained with observation-only loss $L_{\rm obs}$.
+\end{itemize}
+
+To compare them, we evaluate the difference in first-guess error
+across many assimilation cycles:
+\[
+\Delta
+=
+{\rm FG}_{\rm err}(\texttt{net\_obs})
+-
+{\rm FG}_{\rm err}(\texttt{net}).
+\]
+
+If $\Delta>0$, the full method is better.
+Figure~\ref{fig:aipf_ablation} shows that the full loss provides a consistent
+advantage, especially over long evaluation horizons.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.78\textwidth]{images/img18/fg_error_diff_netobs_minus_net.png}
+
+\vspace{2mm}
+\includegraphics[width=0.46\textwidth]{images/img18/fg_error_diff_10000.png}
+\caption{Ablation experiment. Difference in first-guess error between the
+obs-only network and the full AIPF loss. Positive values indicate skill gain
+from including the posterior/distribution fitting term.}
+\label{fig:aipf_ablation}
+\end{figure}
+
+\FloatBarrier
+
+\subsection{Discussion and take-home messages}
+
+The AIPF provides a conceptually clean path toward non-Gaussian
+data assimilation with neural networks:
+\begin{itemize}
+  \item the neural network learns an ensemble transform,
+  \item DeepSets guarantees permutation invariance,
+  \item training is distribution-aware via Gaussian-mixture KL fitting,
+  \item the analysis output is a posterior ensemble, not just a mean.
+\end{itemize}
+
+In summary, the AIPF complements AI-Var:
+\begin{itemize}
+  \item AI-Var learns an efficient approximation to the variational minimizer,
+  \item AIPF learns the posterior distribution as an ensemble.
+\end{itemize}
+
+
+
+
+
+
+

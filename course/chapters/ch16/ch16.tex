@@ -1,0 +1,788 @@
+%!TEX root = ../../e-ai_ML2.tex
+%==============================================================================
+\chapter{AI Transformation: From Communication to Neural Forecasting}
+\label{ch:ai_transformation}
+%==============================================================================
+
+%------------------------------------------------------------------------------
+\section{From Communication History to AI Assistants (1440--2022)}
+\label{sec:ch16_history}
+%------------------------------------------------------------------------------
+
+The current AI transformation in weather services is best understood as part of a longer
+technology trajectory. In a simplified perspective, progress is driven by two interacting
+dimensions:
+\begin{itemize}
+\item \textbf{communication bandwidth and reach} (how information spreads),
+\item \textbf{computation and interaction} (how humans can act on information).
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.62\linewidth]{images/img16/comm_history_crop.png}
+\caption{Communication history and the step to LLM-era interaction.
+The relevant shift is not only access to information but the ability to \emph{interact}
+with information systems in natural language.}
+\label{fig:ch16_comm_history}
+\end{figure}
+
+The key point is not only increasing information availability, but a shift of \emph{interaction mode}.
+The web made information accessible to everyone; smartphones and social media made communication
+continuous; and LLMs now add a new step: \textbf{natural language becomes an interface to knowledge and action}.
+
+\medskip
+\noindent
+\textbf{1440: the printing press.}
+With the printing press (Gutenberg era), information distribution changed from manual copying to
+scalable replication. Knowledge became reproducible at low marginal cost and could spread reliably
+across regions and generations. In the long run, this created the cultural and institutional base
+for mass education, public science, and standardized documentation --- all prerequisites for later
+technological transformation waves.
+
+\medskip
+\noindent
+\textbf{1993: the public web transformation wave.}
+The early 1990s mark the transition from local computing to global information access.
+The web turned digital knowledge into a shared resource, and created the first generation
+of self-service information workflows.
+
+\medskip
+\noindent
+\textbf{Smartphones and social media: interaction becomes permanent.}
+Smartphones and social media created permanent connectivity.
+For weather services, this shift already changed user expectations:
+information must be \emph{immediate, personalized, and always available}.
+
+% --- group 1993 + smartphone to avoid whitespace and improve flow
+\begin{figure}[t]
+\centering
+
+\begin{minipage}[t]{0.49\linewidth}
+  \centering
+  \includegraphics[width=0.92\linewidth]{images/img16/1993_computer_and_web_crop.png}
+  \caption*{\footnotesize \textbf{1993: the public web.} Access to knowledge and digital workflows scales globally.}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.49\linewidth}
+  \centering
+  \includegraphics[width=0.92\linewidth]{images/img16/smartphone_crop.jpeg}
+  \caption*{\footnotesize \textbf{Smartphones.} Continuous interaction and highly personalized information consumption.}
+\end{minipage}
+
+\caption{From global access (web) to permanent interaction (smartphones and social media).}
+\label{fig:ch16_web_and_smartphone}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{2012--2019: ML revolution in vision and translation.}
+The next ML wave was driven by machine learning successes in computer vision and machine translation.
+Deep learning introduced a practical route from ``raw data'' to semantic representations.
+
+\medskip
+\noindent
+\textbf{2022: chatbots cross a usability threshold.}
+With chatbots, interaction itself changes.
+Instead of systems requiring specialized commands and training, systems can accept
+natural language inputs and iteratively refine the output in a dialogue.
+For weather services this marks a qualitative shift: \textbf{language can control complex systems.}
+
+\begin{figure}[t]
+\centering
+
+\begin{minipage}[t]{0.60\linewidth}
+  \centering
+  \includegraphics[width=0.94\linewidth]{images/img16/images_and_translation_crop.jpeg}
+  \caption*{\footnotesize \textbf{Deep learning revolution (2012--2019).} Large improvements in vision and translation.}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.35\linewidth}
+  \centering
+  \includegraphics[width=0.94\linewidth]{images/img16/chatbot2022_crop.jpeg}
+  \caption*{\footnotesize \textbf{2022: Chatbots become practical.} Dialogue enables iterative refinement.}
+\end{minipage}
+
+\caption{Key milestones: deep learning breakthroughs in vision/translation and the rise of practical chatbots.}
+\label{fig:ch16_translation_chatbot}
+\end{figure}
+
+
+
+%------------------------------------------------------------------------------
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{p{0.32\linewidth} p{0.62\linewidth}}
+\hline
+\textbf{Era / technology step} & \textbf{Main change in communication \& interaction} \\
+\hline
+Printing press & scalable information distribution (mass replication) \\
+Telegraph & long-distance messaging becomes near-instant \\
+Radio & one-to-many broadcast to large audiences \\
+Television & audiovisual mass media, daily public information streams \\
+Computers & local digital workflows and computation for everyone \\
+Internet / WWW & global access to knowledge and services \\
+Social media / smartphones & permanent connectivity and personalized feeds \\
+\textbf{LLMs and AI assistants} & \textbf{natural language becomes an interface to knowledge and action} \\
+\hline
+\end{tabular}
+
+\caption{Simplified communication timeline and the shift towards AI assistants.
+The key transition is from information access to natural-language interaction with tools and workflows.}
+\label{tab:ch16_comm_timeline}
+\end{table}
+%------------------------------------------------------------------------------
+
+
+\FloatBarrier
+
+%------------------------------------------------------------------------------
+\section{What an LLM is: tokens, attention, and next-token training}
+\label{sec:ch16_llms}
+%------------------------------------------------------------------------------
+
+To understand language models, we first need a numerical representation of language.
+A computer cannot operate directly on words. Instead, text is translated into \textbf{tokens},
+which are integer identifiers for pieces of text (words, subwords, or even single characters).
+Formally, tokenization maps a text string into a sequence
+\[
+\text{text} \;\longrightarrow\; (t_1,t_2,\dots,t_n),
+\]
+where each $t_k$ is an integer index from a finite vocabulary.
+
+These integers are not yet meaningful by themselves.
+Therefore, each token is mapped to a vector of real numbers by an \textbf{embedding}.
+This embedding is the entry point into a high-dimensional \emph{representation space}:
+\[
+t_k \;\longrightarrow\; e(t_k)\in \mathbb{R}^d.
+\]
+Intuitively, the embedding vectors place tokens into a space in which
+similar meanings and similar usage contexts tend to be represented by vectors
+that are closer to each other (in a learned sense).
+
+With this, language becomes a numerical sequence of vectors,
+and the model can process it using linear algebra operations.
+
+A Large Language Model (LLM) can be summarized in one sentence:
+
+\begin{quote}
+\textbf{An LLM predicts the next token in a sequence, trained on massive text data.}
+\end{quote}
+
+While this sounds simple, the emergent capabilities are substantial because:
+\begin{enumerate}
+\item the training corpus encodes vast amounts of human knowledge and styles,
+\item the model learns representations that compress regularities of language,
+\item the model performs powerful conditional generation at inference time.
+\end{enumerate}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img16/transformer_all.jpeg}
+\caption{Transformer-based language models: tokenization, embeddings, attention, and stacked blocks.}
+\label{fig:ch16_transformer_all}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{Tokenization and embeddings.}
+Text is converted into discrete tokens $t_1, t_2, \dots, t_n$.
+Each token is mapped to a vector embedding $e(t_k) \in \mathbb{R}^d$.
+The model processes the sequence of embeddings:
+\[
+E = (e(t_1), e(t_2), \dots, e(t_n)).
+\]
+
+\medskip
+\noindent
+\textbf{Self-attention.}
+Self-attention lets each word (or token) \emph{look at all other words} and decide which ones matter.
+It computes weights that depend on the current context and then forms a weighted combination of the other tokens.
+
+A simplified attention equation for one head is
+\[
+\mathrm{Attn}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d}}\right)V,
+\]
+where $Q,K,V$ are learned linear projections of the embeddings.
+Intuitively, the dot products $QK^\top$ measure how strongly two tokens are related in the current context.
+The softmax turns these scores into weights, so that important tokens contribute more to the updated representation.
+The resulting attention matrix is therefore a learned, input-dependent connectivity structure.
+
+For our course narrative, one should remember:
+\begin{quote}
+\textbf{Attention enables global context integration: each token can attend to relevant other tokens.}
+\end{quote}
+
+\medskip
+\noindent
+\textbf{Training objective: next-token prediction.}
+At training, the model parameters $\theta$ are optimized to maximize the likelihood
+\[
+p_\theta(t_{k+1}\mid t_1,\dots,t_k)
+\]
+for all positions $k$ in the training data.
+This ``simple'' objective is sufficient to create models that generate coherent text,
+perform reasoning-like behavior, and synthesize information.
+
+\FloatBarrier
+
+\begin{figure}[htbp!]
+\centering
+\includegraphics[width=0.6\linewidth]{images/img16/rag.png}
+\caption{RAG concept: retrieval from external knowledge sources complements the model’s parametric memory.}
+\label{fig:ch16_rag}
+\end{figure}
+
+%------------------------------------------------------------------------------
+\section{From Chat to Systems: tools, retrieval (RAG), and agents}
+\label{sec:ch16_tools_rag_agents}
+%------------------------------------------------------------------------------
+
+In practice, LLMs become most valuable when they are embedded into systems.
+Three extensions are essential:
+
+\begin{itemize}
+\item \textbf{Tools / function calling:} call deterministic functions and services,
+\item \textbf{Retrieval (RAG):} access external documents and domain data,
+\item \textbf{Memory and workflow context:} maintain state over a task.
+\end{itemize}
+
+
+
+\medskip
+\noindent
+\textbf{Functions vs.\ agents.}
+In modern assistant architectures, a central design question is:
+\begin{itemize}
+\item \textbf{agent-centric:} the LLM plans, calls tools, checks results, iterates.
+\item \textbf{function-centric:} the LLM selects and calls explicit functions (including agents as functions),
+\end{itemize}
+
+This is not a binary choice; practical systems combine both.
+In meteorology, the tool landscape is rich: datasets, verification tools, plotting,
+interpolation, model runs, documentation, and communication channels.
+
+\medskip
+\noindent
+\textbf{Important: agents are tools too.}
+Conceptually, an agent can be exposed to the LLM as just another function call:
+\texttt{run\_agent(task, context)}.
+The LLM triggers the agent, the agent executes an iterative tool loop (planning, calling tools,
+verifying results), and returns a structured outcome.
+In this sense, \emph{function-centric orchestration and agent-centric behavior are fully compatible}:
+a single deterministic function call can launch a complex agent workflow.
+
+\begin{figure}[htbp!]
+\centering
+\includegraphics[width=0.6\linewidth]{images/img16/function_or_agent_crop.png}
+\caption{Assistant architecture idea: combine language-based interaction with tool usage and structured workflows.}
+\label{fig:ch16_function_or_agent}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{A weather service viewpoint.}
+From a weather service perspective, the key promise is:
+\begin{quote}
+\textbf{Natural language becomes the universal access layer for data and tools.}
+\end{quote}
+
+This enables a new interaction model:
+operators, forecasters, and developers can drive complex pipelines by dialogue,
+with tool execution handling the deterministic core operations.
+
+\FloatBarrier
+
+%------------------------------------------------------------------------------
+\section{Neural Forecasting: learning motion, fronts, and rollouts}
+\label{sec:ch16_neural_forecasting}
+%------------------------------------------------------------------------------
+
+Weather prediction is fundamentally about \textbf{spatio-temporal pattern evolution}.
+A central question for the AI transformation is:
+\begin{quote}
+\emph{How can neural networks learn to forecast dynamical evolution,
+rather than only ``fit correlations''?}
+\end{quote}
+
+A minimal mental model is the advection of coherent structures.
+A front, precipitation band, or convective cluster often behaves like a spatial pattern that moves and changes.
+This motivates neural architectures that can represent translation-like dynamics.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.96\linewidth]{images/img16/nn_front_template_motion.png}
+\caption{Neural forecasting intuition: a ``template'' pattern plus motion and deformation.}
+\label{fig:ch16_front_template}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{The forecast mapping.}
+In general, deterministic forecasting can be written as
+\[
+[x_{t-\Delta t}, \dots, x_t] \;\xrightarrow{\;F_\theta\;}\; x_{t+\Delta t},
+\]
+or in multi-step rollout form:
+\[
+x_{t+k\Delta t} = F_\theta^{(k)}(x_t),
+\quad\text{with}\quad
+F_\theta^{(k+1)}(x_t)=F_\theta(F_\theta^{(k)}(x_t)).
+\]
+
+The important operational remark:
+\begin{quote}
+\textbf{Long lead times are produced by repeated short-step forecasts (rollout).}
+\end{quote}
+
+\medskip
+\noindent
+\textbf{From nowcasting to forecasting.}
+One narrative in the slides is that the boundary between nowcasting and forecasting
+is increasingly bridged by AI systems.
+Neural networks can learn short-step evolution from data and extend it via rollout,
+sometimes supported by multi-scale architectures.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img16/nwc-to-fcst_crop.png}
+\caption{From nowcasting to forecasting: short-step prediction + rollout connects the time scales.}
+\label{fig:ch16_nwc_to_fcst}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{The NWP continuum and the neural perspective.}
+The ``NWP continuum'' emphasizes the broad spectrum from physics-based modeling
+to data-driven prediction.
+In practice, the future will contain hybrids and coexistence rather than replacement.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.90\linewidth]{images/img16/nwp_continuum_crop.png}
+\caption{NWP continuum: physics-based and ML-based methods co-evolve and interact.}
+\label{fig:ch16_nwp_continuum}
+\end{figure}
+
+\FloatBarrier
+
+%------------------------------------------------------------------------------
+\section{CNN Translation Toy World: features, loss, and why it works}
+\label{sec:ch16_cnn_translation}
+%------------------------------------------------------------------------------
+
+To make the learning mechanism tangible, the slides use a minimal ``toy world'':
+a coherent pattern moves on a periodic domain.
+The example is deliberately simple, but it captures a key mechanism:
+\textbf{local feature extraction + translation equivariance}.
+
+\medskip
+\noindent
+\textbf{A minimal dynamical system: signal on a circle.}
+We consider a 1D periodic coordinate $x \in [0,1)$ and a signal $s(x,t)$.
+At each step, the signal is shifted by some velocity:
+\[
+s(x,t+\Delta t) \approx s(x-u\Delta t, t),
+\]
+which is essentially advection on a periodic domain.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.88\linewidth]{images/img16/signal_on_circle_3d_crop.png}
+\caption{Toy world: a signal evolves on a periodic circle. Forecasting becomes learning motion and deformation.}
+\label{fig:ch16_signal_circle}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{CNN view: translation as local feature transport.}
+A CNN processes local neighborhoods with shared filters.
+This makes the representation naturally suited for moving structures:
+the same filter detects the same feature at any location.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img16/cnn_translation_input_output.png}
+\caption{CNN translation setup: learn mapping from past signal(s) to future signal.}
+\label{fig:ch16_cnn_in_out}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{Learning objective.}
+Let $\hat{s}(x,t+\Delta t)=F_\theta(s(\cdot,t))$ be the prediction.
+A typical loss is mean squared error:
+\[
+\mathcal{L}(\theta) = \frac{1}{N}\sum_{i=1}^N \| \hat{s}_i - s_i^{\mathrm{true}} \|_2^2 .
+\]
+
+Training curves typically show rapid reduction of error as the model learns
+to align motion and structure.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.72\linewidth]{images/img16/cnn_translation_loss.png}
+\caption{Training loss: the CNN learns to predict the translated/deformed signal.}
+\label{fig:ch16_cnn_loss}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{Inside the CNN: hierarchical feature representations.}
+The CNN does not store a ``copy'' of the signal; it learns feature representations
+of increasing abstraction.
+Early layers detect local gradients and bumps; deeper layers capture composite patterns.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.96\linewidth]{images/img16/cnn_translation_features_h1.png}
+\caption{CNN feature maps (example): early hidden representation.}
+\label{fig:ch16_cnn_h1}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.96\linewidth]{images/img16/cnn_translation_features_h2.png}
+\caption{CNN feature maps (example): intermediate hidden representation.}
+\label{fig:ch16_cnn_h2}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.96\linewidth]{images/img16/cnn_translation_features_h3.png}
+\caption{CNN feature maps (example): deeper hidden representation.}
+\label{fig:ch16_cnn_h3}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{Why this is not just ``correlation''.}
+The toy world illustrates the general mechanism:
+the network learns a representation in which the state evolution becomes predictable.
+Forecasting becomes learning an operator that is consistent across space and time.
+
+In meteorology, the same logic applies at a larger scale:
+fronts, jets, clouds and precipitation structures have recognizable patterns,
+and their motion is constrained by dynamics.
+The neural network can exploit these regularities.
+
+\medskip
+\noindent
+\textbf{Minimal code example (toy translation model).}
+The following simplified code block illustrates the key learning loop
+(dataset generation + CNN mapping + rollout). The actual notebook contains
+a more elaborate version with diagnostics and plots.
+
+\begin{codeonly}{python}
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+# periodic 1D grid
+nx = 128
+x = np.linspace(0, 1, nx, endpoint=False)
+
+def make_blob(center, width=0.06):
+    dx = (x - center + 0.5) % 1.0 - 0.5
+    return np.exp(-(dx**2)/(2*width**2))
+
+def shift_periodic(signal, shift):
+    return np.roll(signal, shift)
+
+# dataset: random centers + random shifts
+def sample_pair(batch=64):
+    X, Y = [], []
+    for _ in range(batch):
+        c = np.random.rand()
+        s0 = make_blob(c)
+        sh = np.random.randint(1, 6)      # small motion
+        s1 = shift_periodic(s0, sh)
+        X.append(s0); Y.append(s1)
+    X = torch.tensor(np.stack(X), dtype=torch.float32).unsqueeze(1)  # (B,1,nx)
+    Y = torch.tensor(np.stack(Y), dtype=torch.float32).unsqueeze(1)
+    return X, Y
+
+class SmallCNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv1d(1, 16, 5, padding=2),
+            nn.GELU(),
+            nn.Conv1d(16, 16, 5, padding=2),
+            nn.GELU(),
+            nn.Conv1d(16, 1, 1)
+        )
+    def forward(self, x):
+        return self.net(x)
+
+model = SmallCNN()
+opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+for step in range(2000):
+    Xin, Ytrue = sample_pair(batch=64)
+    Yhat = model(Xin)
+    loss = F.mse_loss(Yhat, Ytrue)
+    opt.zero_grad(); loss.backward(); opt.step()
+\end{codeonly}
+
+\FloatBarrier
+
+%------------------------------------------------------------------------------
+\section{Weather Service Perspective: products, services, and operational ecosystems}
+\label{sec:ch16_services}
+%------------------------------------------------------------------------------
+
+The AI transformation is not only about building better forecast models.
+For a National Meteorological Service, a very large part of value creation happens
+\textbf{after} the raw forecast is available: products, services, interpretation,
+and operational integration.
+In practice, weather services can easily spend \textbf{50\% or more} of their effort
+on \textbf{derived products and services} --- and this share can be even higher,
+because the societal value is generated through delivery, interpretation and impact.
+
+\medskip
+\noindent
+\textbf{Raw forecast fields are only the beginning.}
+Operational services require much more than state variables:
+\begin{itemize}
+\item derived variables and indicators (e.g.\ road weather indices, icing risk, wind power),
+\item phenomena and event extraction (high-impact weather diagnostics),
+\item warning logic and impact-based products,
+\item verification, monitoring, and quality control (QC),
+\item explainability, interpretation, and communication,
+\item domain-specific user-facing products (aviation, hydrology, health, civil protection).
+\end{itemize}
+This is exactly why an AI strategy for weather services must cover the \emph{full value chain},
+not only the forecasting model.
+
+\medskip
+\noindent
+\textbf{Operational AI forecasting is already real.}
+The slides emphasize an important reality check:
+AI forecasting in Europe is no longer ``research only''.
+Several systems are already in production use (e.g.\ AIFS, AICON, BRIS),
+and they complement classical NWP by providing:
+\begin{itemize}
+\item fast state-to-state forecasts (minutes instead of hours),
+\item competitive large-scale skill for key variables,
+\item robust baselines and rapid experimentation.
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.30\linewidth]{images/img16/already1.png}\hfill
+\includegraphics[width=0.22\linewidth]{images/img16/already2.png}\hfill
+\includegraphics[width=0.30\linewidth]{images/img16/already3.png}
+\caption{Operational AI forecasting is already in production use in Europe (slide narrative:
+``not research only''). This strengthens the case for systematic integration into the
+weather service toolbox.}
+\label{fig:ch16_already_operational}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{Ecosystem viewpoint: a portfolio of complementary libraries.}
+The European ML-for-NWP ecosystem develops along several complementary lines.
+A key slide message is that this is \textbf{good news}:
+no single framework needs to do everything; modular building blocks enable rapid innovation,
+and shared standards support interoperability and reuse.
+In particular, the ecosystem includes complementary strengths such as:
+\begin{itemize}
+\item \textbf{Anemoi:} end-to-end AI weather models (training + inference stack),
+\item \textbf{mfai:} transformers / vision methods and many applications,
+\item \textbf{MLCast:} observation-driven nowcasting components,
+\item \textbf{FRAIM:} products and services across the full AI/ML value chain.
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{images/img16/library_ecosystem2.png}
+\caption{Library ecosystem: complementary strengths, one shared mission.
+The core point is modularity and interoperability rather than a single monolith.}
+\label{fig:ch16_library_ecosystem2}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{What we can do already: full value chain competence.}
+We already have strong building blocks in place,
+spanning both core forecasting and applied product development:
+\begin{itemize}
+\item an operational framework for AI-based forecasting (Anemoi),
+\item product and service libraries (mfai, FRAIM) for:
+\begin{itemize}
+\item downscaling and high-resolution products,
+\item road weather services,
+\item high-impact weather feature extraction,
+\item interpretation and explainability,
+\item nowcasting of observation fields (radiation, precipitation, \dots).
+\end{itemize}
+\end{itemize}
+This is not just technical capability: it is the \textbf{organizational foundation}
+for sustainable AI operations, collaboration, and benchmarking.
+
+\medskip
+\noindent
+\textbf{Physics and AI: why physics remains essential.}
+A central warning in the slides is that weather is not just a ``pattern problem''.
+Forecasting is consistent evolution of a physical state:
+conservation laws, balances, constraints, multi-scale coupling.
+Pure AI models can show strong short-term skill but still drift long-term when small violations
+accumulate (moisture, energy, mass), and rare extremes require physical consistency.
+The long-term direction is therefore clear:
+\begin{quote}
+\textbf{Future AI forecast systems will be ``Physics + AI''.}
+\end{quote}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.70\linewidth]{images/img16/earth_forecast2.png}
+\caption{Physics and AI: AI gives speed and learning; physics gives truth and trust.
+The operational goal is reliable evolution under constraints, not only local pattern accuracy.}
+\label{fig:ch16_physics_ai_earth}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{Key message for weather services.}
+The AI transformation becomes truly valuable when forecasting engines are connected
+to product/service ecosystems and standards-based operational integration.
+In other words:
+\begin{quote}
+\textbf{Forecast engines + product/service ecosystems + operational platforms.}
+\end{quote}
+
+\FloatBarrier
+
+
+%------------------------------------------------------------------------------
+\section{Outlook: transformation of workflows and service building}
+\label{sec:ch16_outlook}
+%------------------------------------------------------------------------------
+
+The final part of the lecture is pragmatic and action-oriented.
+AI will not only provide new forecast engines;
+it will reshape workflows, software architectures, and how we build services.
+The slide narrative highlights three connected points: \textbf{tools},
+\textbf{standards}, and \textbf{workflow redesign}.
+
+\medskip
+\noindent
+\textbf{Tool calling becomes a strategic capability.}
+Modern AI assistants become powerful when they can call trusted tools.
+This is currently a fast-moving technology race:
+\begin{itemize}
+\item OpenAI: tool calling with JSON schema and structured outputs,
+\item Anthropic: MCP (Model Context Protocol) as connector architecture,
+\item Google: Gemini function calling within its ecosystem,
+\item Linux Foundation / AAIF: interoperability to avoid vendor lock-in.
+\end{itemize}
+The key operational message for weather services is:
+\begin{quote}
+\textbf{LLMs need good tool definitions --- and we can use this to build better services.}
+\end{quote}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.22\linewidth]{images/img16/race01.png}\hfill
+\includegraphics[width=0.22\linewidth]{images/img16/race02.png}\hfill
+\includegraphics[width=0.22\linewidth]{images/img16/race03.png}\hfill
+\includegraphics[width=0.22\linewidth]{images/img16/race04.png}
+\caption{Tool calling and agent interoperability: multiple technology streams push towards
+standardized access to tools and enterprise systems.
+For weather services this translates into a concrete opportunity:
+expose operational expertise as callable tools.}
+\label{fig:ch16_tool_calling_race}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{DAWID opportunity: our trusted functions at our fingertips.}
+A central slide message is that a platform such as DAWID can expose existing operational
+capabilities as tools with clean interfaces:
+\begin{itemize}
+\item tools are trusted DWD / ECMWF / NMS functions (not generic chat),
+\item each tool encodes a workflow step we already know,
+\item the LLM becomes orchestrator and user interface.
+\end{itemize}
+This yields immediate impact: faster exploration, reproducible results,
+and knowledge transfer (tools carry expertise).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.48\linewidth]{images/img16/fraim01.png}\hfill
+\includegraphics[width=0.48\linewidth]{images/img16/fraim02.png}
+\caption{DAWID and FRAIM in the slide narrative: make operational capabilities accessible
+via tool interfaces --- ``our functions'' become reusable building blocks.}
+\label{fig:ch16_dawid_fraim}
+\end{figure}
+
+\medskip
+\noindent
+\textbf{Workflow redesign: if a task repeats, it should become a tool.}
+One of the strongest action messages is: rebuild services by analysing daily work,
+finding waste, and turning repeated tasks into tools with clear I/O interfaces.
+This can reduce copy/paste workflows, waiting time, and loss of context across files,
+emails and chats.
+In short:
+\begin{quote}
+\textbf{If a task repeats, it should become a tool.}
+\end{quote}
+
+\medskip
+\noindent
+\textbf{Bring your domain expertise: make AI your own.}
+LLMs and neural networks do not automatically understand meteorology:
+processes, states, balances, physical limits, plausibility, regimes, and extremes.
+Operational quality requires embedding domain knowledge into:
+\begin{itemize}
+\item variables, events, diagnostics, and what matters,
+\item physical constraints and what is allowed,
+\item product requirements and what is useful.
+\end{itemize}
+This is the human core contribution in the AI era: not outsourcing expertise,
+but encoding it into tools, workflows and constraints.
+
+\begin{figure}[t]
+\centering
+
+\begin{minipage}[t]{0.48\linewidth}
+  \centering
+  \vspace{0pt}
+  \includegraphics[width=\linewidth,height=0.60\textheight,keepaspectratio]{images/img16/physics_and_ai.png}
+
+  \vspace{1mm}
+  {\footnotesize \textbf{Domain expertise.} AI becomes powerful when grounded in meteorology.}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\linewidth}
+  \centering
+  \vspace{0pt}
+  \includegraphics[width=\linewidth,height=0.60\textheight,keepaspectratio]{images/img16/ai_and_weather3.png}
+
+  \vspace{1mm}
+  {\footnotesize \textbf{System transformation.} Models, tools, workflows and products evolve together.}
+\end{minipage}
+
+\vspace{1mm}
+\caption{Key messages of the AI transformation for weather services:
+domain expertise is essential for trust, and operational impact requires a full-system approach.}
+\label{fig:ch16_outlook_pair}
+\end{figure}
+
+
+
+\medskip
+\noindent
+\textbf{Outlook.}
+The transformation is therefore not only a model question, but a system question:
+AI-enabled weather services will be characterized by
+\begin{itemize}
+\item language-driven access to complex toolchains,
+\item automation of analysis, summarization and reporting,
+\item rapid prototyping of products and service variants,
+\item continuous evaluation and improvement cycles.
+\end{itemize}
+
+
