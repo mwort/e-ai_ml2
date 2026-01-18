@@ -1,0 +1,170 @@
+\documentclass[11pt,oneside]{book} % Book layout, single-sided
+
+%==============================================================================
+%  Packages and global setup
+%==============================================================================
+\input{packages/e-ai_tutorial_packages}
+
+%==============================================================================
+%  Document
+%==============================================================================
+\begin{document}
+
+%------------------------------------------------------------------------------
+% Front Matter
+%------------------------------------------------------------------------------
+\frontmatter
+
+%------------------------------------------------------------------------------
+% Title Page
+%------------------------------------------------------------------------------
+\begin{titlepage}
+
+%--- Logos --------------------------------------------------------------------
+\begin{center}
+\makebox[\textwidth]{%
+  \raisebox{-0.6\height}{\includegraphics[height=2.1cm]{images/img00/ecmwf.png}}%
+  \hfill
+  \raisebox{-0.5\height}{\includegraphics[height=1.8cm]{images/img00/university-of-reading-logo-vector.png}}%
+  \hfill
+  \raisebox{-0.5\height}{\includegraphics[height=1.2cm]{images/img00/DWD-Logo_2013.svg.png}}%
+}
+\end{center}
+
+%--- Title ---------------------------------------------------------------------
+\centering
+\vspace{4cm}
+
+{\Huge\bfseries
+Python and Machine Learning for Weather, Climate and Environment\par}
+
+\vspace{1cm}
+
+{\Large\bfseries
+Tutorial and Guide\par}
+
+by \\EUMETNET E-AI Programme, \\
+ECMWF, University of Reading, Deutscher Wetterdienst
+
+\vspace{2cm}
+
+%--- Authors -------------------------------------------------------------------
+{\Large
+Roland Potthast\par
+\vspace{0.5cm}
+with contributions by
+Stefanie Hollborn, Jan Keller, Thomas Deppisch, Mareike Burba,
+Matthias Mages, Sarah Heibutzki, Marek Jacob, Florian Prill,
+Tobias Göcke, Felix Fundel\par}
+
+\vfill
+
+%--- Date ---------------------------------------------------------------------
+{\Large \today\par}
+
+\end{titlepage}
+
+%------------------------------------------------------------------------------
+% Table of Contents
+%------------------------------------------------------------------------------
+\tableofcontents
+
+%------------------------------------------------------------------------------
+% Introduction (Roman numbering)
+%------------------------------------------------------------------------------
+\frontmatter
+\renewcommand{\thechapter}{\Roman{chapter}}
+\renewcommand{\thesection}{\thechapter\Roman{section}}
+
+\input{chapters/ch00/ch00} % Introduction
+
+%------------------------------------------------------------------------------
+% Reset numbering for main content
+%------------------------------------------------------------------------------
+\renewcommand{\thechapter}{\arabic{chapter}}
+\renewcommand{\thesection}{\arabic{chapter}.\arabic{section}}
+
+%==============================================================================
+%  Main Matter
+%==============================================================================
+\mainmatter
+
+%==============================================================================
+% Day 1
+%==============================================================================
+\addtocontents{toc}{\noindent\hrulefill\vspace{-1.5ex}\par}
+\addcontentsline{toc}{chapter}{\textcolor{dwdspecial}
+{\large Day 1: Python Workhorse and AI/ML}}
+
+\input{chapters/ch01/ch01} % Python basics
+\input{chapters/ch02/ch02} % Jupyter, APIs
+\input{chapters/ch03/ch03} % GRIB, NetCDF, eccodes
+\input{chapters/ch04/ch04} % AI/ML fundamentals
+
+%==============================================================================
+% Day 2
+%==============================================================================
+\addtocontents{toc}{\noindent\hrulefill\vspace{-1.5ex}\par}
+\addcontentsline{toc}{chapter}{\textcolor{dwdspecial}
+{\large Day 2: AI/ML Basics, LLMs, Multi-Modality}}
+
+\input{chapters/ch05/ch05} % NN architectures
+\input{chapters/ch06/ch06} % Large language models
+\input{chapters/ch07/ch07} % RAG
+\input{chapters/ch08/ch08} % Multimodal LLMs
+
+%==============================================================================
+% Day 3
+%==============================================================================
+\addtocontents{toc}{\noindent\hrulefill\vspace{-1.5ex}\par}
+\addcontentsline{toc}{chapter}{\textcolor{dwdspecial}
+{\large Day 3: Diffusion, Agents, Feature Detection, MLflow}}
+
+\input{chapters/ch09/ch09} % Diffusion & graphs
+\input{chapters/ch10/ch10} % Agents
+\input{chapters/ch11/ch11} % DAWID
+\input{chapters/ch12/ch12} % MLflow
+
+%==============================================================================
+% Day 4
+%==============================================================================
+\addtocontents{toc}{\noindent\hrulefill\vspace{-1.5ex}\par}
+\addcontentsline{toc}{chapter}{\textcolor{dwdspecial}
+{\large Day 4: MLOps, CI/CD, Anemoi, AI Work}}
+
+\input{chapters/ch13/ch13} % MLOps
+\input{chapters/ch14/ch14} % CI/CD
+\input{chapters/ch15/ch15} % Anemoi
+\setcounter{chapter}{15}
+\input{chapters/ch16/ch16} % AI transformation
+
+%==============================================================================
+% Day 5
+%==============================================================================
+\addtocontents{toc}{\noindent\hrulefill\vspace{-1.5ex}\par}
+\addcontentsline{toc}{chapter}{\textcolor{dwdspecial}
+{\large Day 5: AI Models, Physics, Observation-driven Learning}}
+
+\input{chapters/ch17/ch17} % AICON
+\input{chapters/ch18/ch18} % AI data assimilation
+\input{chapters/ch19/ch19} % AI and physics
+\input{chapters/ch20/ch20} % Learning from observations only
+
+%==============================================================================
+% Appendix
+%==============================================================================
+\addtocontents{toc}{\noindent\hrulefill\vspace{-1.5ex}\par}
+\addcontentsline{toc}{chapter}{\textcolor{dwdspecial}
+{\large Appendix}}
+
+\input{chapters/ch21/appendix01}
+
+%==============================================================================
+%  Back Matter
+%==============================================================================
+\backmatter
+
+%\chapter*{Appendix}
+%\lipsum[1-2]
+
+\end{document}
