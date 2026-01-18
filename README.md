@@ -1,6 +1,6 @@
 # E-AI — AI/ML Intensive Training Course (ECMWF, January 2026)
 
-This repository contains the material for the **E-AI AI/ML Intensive Training Course**, developed in a first version in 2025 at DWD and given to 160 participants, revised and extended and delivered at **ECMWF in January 2026** for 220+ participants from **ecmwf staff**.
+This repository contains the material for the **E-AI AI/ML Intensive Training Course**. The first version was developed at **DWD in 2025** and delivered to **160 participants**. The course was also delivered to a team of **NWP scientists in Oman in November 2026**. It was revised and extended and then delivered at **ECMWF in January 2026** for **220+ participants from ECMWF staff**.
 
 The course provides a structured, hands-on introduction to **modern AI/ML methods** with a strong focus on **weather and climate applications**, including operational perspectives, reproducibility, and best practices for building reliable ML workflows.
 
@@ -37,14 +37,14 @@ The training is organized as **5 days**, with **20 sessions** (Chapters 1–20).
 | 09 | 3 | 9 | Diffusion and Flexible Graph Networks |
 | 10 | 3 | 10 | Agents and Coding with LLM |
 | 11 | 3 | 11 | DAWID, LLMs and Feature Detection |
-| 12 | 3 | 12 | MLFlow – Managing and Monitoring Training |
+| 12 | 3 | 12 | MLflow – Managing and Monitoring Training |
 | 13 | 4 | 13 | MLOps – Development and Operations Integrated |
 | 14 | 4 | 14 | CI/CD – Continuous Integration and Deployment |
 | 15 | 4 | 15 | Anemoi – AI-Based Weather Modeling |
 | 16 | 4 | 16 | The AI Transformation |
 | 17 | 5 | 17 | Model Emulators, AIFS and AICON |
 | 18 | 5 | 18 | AI Data Assimilation |
-| 19 | 5 | 19 | AI and Physics and Data |
+| 19 | 5 | 19 | AI, Physics, and Data |
 | 20 | 5 | 20 | Learning from Observations Only |
 
 Appendix (optional): **History of Large Language Models**.
@@ -70,8 +70,8 @@ Large datasets are generally **not stored in Git**. See `data/` notes if present
 ### Participants
 - Follow the course schedule (Day 1 → Day 5).
 - Use the lecture PDFs as orientation and run the associated notebooks.
-- Use the manuscript PDF for further details!
-- Exercises are designed to be runnable on standard laptops. Eccodes will need LINUX or MAC. 
+- Use the manuscript PDF for further details.
+- Exercises are designed to run on standard laptops. **ECCODES requires Linux or macOS.**
 
 ### Trainers / Instructors
 - Slides are built via LaTeX.
@@ -82,7 +82,13 @@ Large datasets are generally **not stored in Git**. See `data/` notes if present
 
 ## License
 
-This material is released under the **Creative Commons Attribution 4.0 International (CC BY 4.0)** license.
+This work is licensed under the **Creative Commons Attribution 4.0 International (CC BY 4.0)** License.
+
+You are free to share and adapt the material for any purpose, even commercially, **as long as you give appropriate credit**.
+
+© Roland Potthast and contributors.
+
+CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
 
 You are free to:
 - **Share** — copy and redistribute the material in any medium or format
@@ -90,6 +96,12 @@ You are free to:
 
 Under the following terms:
 - **Attribution** — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
+
+## Attribution
+
+If you reuse this material, please cite:
+
+Roland Potthast et al., *EUMETNET E-AI ML2 Course Material*, CC BY 4.0.
 
 ---
 
@@ -100,7 +112,7 @@ The material has been generated mainly by **Roland Potthast**, with contribution
 - Stefanie Hollborn (FRAIM, Transformer, LLM)
 - Jan Keller (AI-VAR)
 - Marek Jacob (Anemoi Product Application Example)
-- Florian Prill (Aicon Walkthrough)
+- Florian Prill (AICON Walkthrough)
 - Tobias Göcke (AICON)
 - Felix Fundel (Front Detection)
 - Thomas Deppisch (FRAIM)
@@ -108,7 +120,7 @@ The material has been generated mainly by **Roland Potthast**, with contribution
 - Matthias Mages (FRAIM)
 - Sarah Heibutzki (AI-VAR)
 - Nikolas Porz (DAWID)
-s
+
 ---
 
 ## Acknowledgements
