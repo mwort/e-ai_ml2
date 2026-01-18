@@ -1,0 +1,14 @@
+# Dockerfile
+#   02_dockerfile.txt
+#
+# Build with
+#
+#   docker build -t python-hello-docker -f 02_dockerfile.txt .
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY 02_code_to_execute_in_docker.py /app/
+
+CMD ["python", "02_code_to_execute_in_docker.py"]

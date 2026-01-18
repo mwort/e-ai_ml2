@@ -1,0 +1,32 @@
+(ropy) rpotthas@ofmws253-2 ~/all/e-ai_ml2/course/code/code13 % docker build -t python-hello-docker -f 02_dockerfile.txt .
+
+[+] Building 5.9s (9/9) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from 02_dockerfile.txt                                                        0.0s
+ => => transferring dockerfile: 293B                                                                               0.0s
+ => [internal] load metadata for docker.io/library/python:3.11-slim                                                2.5s
+ => [auth] library/python:pull token for registry-1.docker.io                                                      0.0s
+ => [internal] load .dockerignore                                                                                  0.0s
+ => => transferring context: 2B                                                                                    0.0s
+ => [1/3] FROM docker.io/library/python:3.11-slim@sha256:1dd3dca85e22886e44fcad1bb7ccab6691dfa83db52214cf9e20696e  3.1s
+ => => resolve docker.io/library/python:3.11-slim@sha256:1dd3dca85e22886e44fcad1bb7ccab6691dfa83db52214cf9e20696e  0.0s
+ => => sha256:e520b56ca06c357af399db1a3f56197a91b4dd3fd26f6cc7ebaea0a55ba9408c 14.31MB / 14.31MB                   1.4s
+ => => sha256:d6c334210834c83bc9858624f5bf820185717657b3cbe19be9f21121e59de882 1.27MB / 1.27MB                     1.0s
+ => => sha256:fadbb2bb3227921a21310ec375def0aec3c9e3d199a0c84684c201e45f78a75e 249B / 249B                         0.3s
+ => => sha256:2ae15a20160209c6fd6cff4886e4ba2e666fa5bedd7b54a2c0097ea6646f0273 30.14MB / 30.14MB                   2.6s
+ => => extracting sha256:2ae15a20160209c6fd6cff4886e4ba2e666fa5bedd7b54a2c0097ea6646f0273                          0.3s
+ => => extracting sha256:d6c334210834c83bc9858624f5bf820185717657b3cbe19be9f21121e59de882                          0.0s
+ => => extracting sha256:e520b56ca06c357af399db1a3f56197a91b4dd3fd26f6cc7ebaea0a55ba9408c                          0.2s
+ => => extracting sha256:fadbb2bb3227921a21310ec375def0aec3c9e3d199a0c84684c201e45f78a75e                          0.0s
+ => [internal] load build context                                                                                  0.0s
+ => => transferring context: 333B                                                                                  0.0s
+ => [2/3] WORKDIR /app                                                                                             0.1s
+ => [3/3] COPY 02_code_to_execute_in_docker.py /app/                                                               0.0s
+ => exporting to image                                                                                             0.0s
+ => => exporting layers                                                                                            0.0s
+ => => exporting manifest sha256:747e56aec03dcd048b98b7f1b9dc258dce15974c9224cc1c1327d212cfbf1ab0                  0.0s
+ => => exporting config sha256:7c28e33b0663c30e937752ff29ff2b7e2993196b24590eaba8f76fcb2b6d87e7                    0.0s
+ => => exporting attestation manifest sha256:1e2ab5679fa09d4d319248373e0c72ce3def01bdb07db04aa8790d9d3547c354      0.0s
+ => => exporting manifest list sha256:6af009439d99645aeec0e1531e33592011917fc318dd8f1957b2fbb5083321d2             0.0s
+ => => naming to docker.io/library/python-hello-docker:latest                                                      0.0s
+ => => unpacking to docker.io/library/python-hello-docker:latest                                                   0.0s
+(ropy) rpotthas@ofmws253-2 ~/all/e-ai_ml2/course/code/code13 %

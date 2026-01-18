@@ -1,0 +1,2 @@
+Hello from Docker
+Wrote file: /app/02_docker_output.txt
