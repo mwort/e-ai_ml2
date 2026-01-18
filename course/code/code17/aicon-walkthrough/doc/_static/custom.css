@@ -1,0 +1,50 @@
+/* Set background for code input cells */
+div.cell div.cell_input {
+    background-color: #f8f8f8;
+    border-left: 4px solid #e0e0e0;
+    padding: 0.5em;
+    margin-bottom: 0.5em;
+    border-radius: 4px;
+}
+
+/* Set background for code output cells */
+div.cell_output {
+    background-color: #f0f8ff;
+    border-left: 4px solid #add8e6;
+    padding: 0.5em;
+    margin-bottom: 1em;
+    border-radius: 4px;
+}
+
+selector {
+  --mystnb-stderr-bg-color: #add8e6;
+}
+
+/* For light theme */
+html[data-theme="light"] {
+  --pst-color-surface: transparent;
+  --mystnb-stderr-bg-color: transparent;
+  --mystnb-stdout-bg-color: transparent;  
+}
+
+/* For dark theme */
+html[data-theme="dark"] {
+  --pst-color-surface: transparent;
+  --mystnb-stderr-bg-color: transparent;
+  --mystnb-stdout-bg-color: transparent;  
+}
+/* Make all relevant wrappers transparent */
+.cell, .cell-wrapper, .cell-input-wrapper, .cell-output-wrapper, .highlight {
+  background-color: transparent !important;
+}
+
+
+.cell_output .output.stderr {
+	background: var(--mystnb-stderr-bg-color);
+	border: 1px solid var(--mystnb-stderr-border-color);
+}
+
+button.theme-switch-button {
+    display: none !important;
+}
+

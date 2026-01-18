@@ -1,0 +1,27 @@
+# requirements file for editable install of anemoi packages from GitHub
+
+# Install Anemoi-training including all required upstream dependencies from PyPI
+-e git+https://github.com/ecmwf/anemoi-core.git@training-0.7.0#egg=anemoi-training[test]&subdirectory=training
+
+# overwrite the PyPI version of anemoi-models
+-e git+https://github.com/ecmwf/anemoi-core.git@models-0.10.0#egg=anemoi-models&subdirectory=models
+
+# overwrite the PyPI version of anemoi-graphs
+-e git+https://github.com/ecmwf/anemoi-core.git@graphs-0.7.2#egg=anemoi-graphs&subdirectory=graphs
+
+# overwrite the PyPI version of anemoi-datasets
+-e git+https://github.com/ecmwf/anemoi-datasets.git@0.5.28#egg=anemoi-datasets
+
+
+pytest
+pre-commit
+
+# additional packages for the Jupyter notebook
+jupyter
+mermaid-python
+graphviz
+nb-js-diagrammers
+mermaid-magic
+cartopy
+jsonargparse
+ussa1976

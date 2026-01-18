@@ -1,0 +1,13 @@
+stages:
+  - deploy
+
+pages:
+  stage: deploy
+  tags:
+    - alpine, dkrz
+  script:
+    - mkdir -p public
+    - cp -r doc/_build/html/* public/
+  artifacts:
+    paths:
+      - public

@@ -1,0 +1,11 @@
+doc/.ipynb_checkpoints/
+doc/__pycache__/
+doc/aicon-anemoi/
+doc/icon_output_0026_R03B07_G_2024090100.grib2
+doc/icon_output_0026_R03B07_G_2024090100_cli.grib2
+doc/inference_test01.yaml
+doc/none/
+doc/output_training/
+doc/swift.dkrz.de/
+doc/swiftbrowser.dkrz.de/
+doc/test_data_aicon_inference/
