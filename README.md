@@ -1,8 +1,13 @@
-# E-AI — AI/ML Intensive Training Course (ECMWF, January 2026)
+# E-AI — AI/ML Intensive Training Course 
 
-This repository contains the material for the **E-AI AI/ML Intensive Training Course**. The first version was developed at **DWD in 2025** and delivered to **160 participants**. The course was also delivered to a team of **NWP scientists in Oman in November 2026**. It was revised and extended and then delivered at **ECMWF in January 2026** for **220+ participants from ECMWF staff**.
+## ECMWF -- University of Reading -- Deutscher Wetterdienst (DWD)
+### January 2026
 
-The course provides a structured, hands-on introduction to **modern AI/ML methods** with a strong focus on **weather and climate applications**, including operational perspectives, reproducibility, and best practices for building reliable ML workflows.
+This repository contains the material for the **E-AI AI/ML Intensive Training Course**. The first version was developed at **DWD in 2025** and delivered to **160 participants**. Parts of the course wer given at the E-AI Summer Workshop in July, 2026, with about 80 people participating. The course was also delivered to a team of **NWP scientists in Oman in November 2026**. It was revised and extended and then delivered at **ECMWF in January 2026** for **220+ participants from ECMWF staff**.
+
+The course provides a structured, hands-on introduction to **modern AI/ML methods** with a strong focus on **weather and climate applications**, including operational perspectives, reproducibility, and best practices for building reliable ML workflows. 
+
+The course expects participants to actively engage with the material. It is designed to build intuition through **simple hands-on examples** for all key techniques and to provide **practical insight wherever possible**.
 
 ---
 
@@ -17,6 +22,9 @@ After completing the course, participants will be able to:
 - apply AI/ML methods to typical meteorological data formats (GRIB, NetCDF, OpenData)
 - connect AI/ML workflows to operational themes: verification, monitoring, reproducibility, MLOps/CI
 - gain an overview of AI weather models (e.g. **Anemoi, AIFS, AICON**) and AI-based data assimilation
+- understand the role of **physics and domain knowledge** in AI models (e.g. **physics-informed learning**, constraints, hybrid modelling)
+- understand how **forecasting from observations** works, including **data-driven nowcasting/short-range prediction** and learned dynamics
+
 
 ---
 
@@ -86,9 +94,10 @@ This work is licensed under the **Creative Commons Attribution 4.0 International
 
 You are free to share and adapt the material for any purpose, even commercially, **as long as you give appropriate credit**.
 
-© Roland Potthast and contributors.
+© Roland Potthast and contributors, 2025–2026.
 
 CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+
 
 You are free to:
 - **Share** — copy and redistribute the material in any medium or format
@@ -110,12 +119,12 @@ Roland Potthast et al., *EUMETNET E-AI ML2 Course Material*, CC BY 4.0.
 The material has been generated mainly by **Roland Potthast**, with contributions and support from:
 
 - Stefanie Hollborn (FRAIM, Transformer, LLM)
-- Jan Keller (AI-VAR)
-- Marek Jacob (Anemoi Product Application Example)
+- Jan Keller (AI-VAR, AICON)
+- Marek Jacob (Anemoi Product Application Example, AICON, Python)
 - Florian Prill (AICON Walkthrough)
 - Tobias Göcke (AICON)
-- Felix Fundel (Front Detection)
-- Thomas Deppisch (FRAIM)
+- Felix Fundel (Front Detection, Verification)
+- Thomas Deppisch (FRAIM, AI-VAR)
 - Mareike Burba (Python)
 - Matthias Mages (FRAIM)
 - Sarah Heibutzki (AI-VAR)
