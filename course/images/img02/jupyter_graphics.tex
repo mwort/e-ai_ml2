@@ -1,0 +1,95 @@
+\documentclass[tikz,border=10pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, shadows, fit}
+
+\begin{document}
+
+\tikzset{
+    box/.style={
+        rectangle,
+        rounded corners,
+        minimum width=3cm,
+        minimum height=1.2cm,
+        text centered,
+        draw=black,
+        fill=cyan!30,
+        drop shadow
+    },
+    server/.style={
+        rectangle,
+        rounded corners,
+        minimum width=3.5cm,
+        minimum height=1.5cm,
+        text centered,
+        draw=black,
+        fill=orange!30,
+        drop shadow
+    },
+    storage/.style={
+        rectangle,
+        rounded corners,
+        minimum width=3cm,
+        minimum height=1.2cm,
+        text centered,
+        draw=black,
+        fill=purple!20,
+        drop shadow
+    },
+    cloud/.style={
+        ellipse,
+        minimum width=2.5cm,
+        minimum height=1cm,
+        text centered,
+        draw=black,
+        fill=blue!15,
+        drop shadow
+    },
+    arrow/.style={
+        thick,
+        -Stealth,
+        color=blue!70
+    },
+    bigarrow/.style={
+        very thick,
+        -Stealth,
+        color=teal!70
+    }
+}
+
+\begin{tikzpicture}[node distance=2.5cm]
+
+% Local Machine
+\node[box] (browser) {Web Browser\\{\small (Chrome, Firefox)}};
+\node[below=0.5cm of browser, font=\small\itshape] (local) {Local Machine};
+\node[fit={(browser) (local)}, draw, dashed, rounded corners, line width=1pt, color=cyan!60, label=above:{\textbf{Client Side}}, inner sep=0.6cm] (client-box) {};
+
+% Network
+\node[cloud, right=3cm of browser] (network) {Internet/\\SSH Tunnel};
+
+% Remote Server
+\node[server, right=3cm of network] (jupyter) {Jupyter Server\\{\small Port 8888}};
+\node[box, above=1.5cm of jupyter] (kernel) {Python Kernel\\{\small Computation}};
+\node[storage, below=1.5cm of jupyter] (files) {Files \& Notebooks\\{\small .ipynb}};
+\node[below=0.5cm of files, font=\small\itshape] (remote) {Remote Server (HPC, Cloud, VM)};
+\node[fit={(jupyter) (kernel) (files) (remote)}, draw, dashed, rounded corners, line width=1pt, color=orange!60, label=above:{\textbf{Server Side}}, inner sep=0.6cm] (server-box) {};
+
+% Connections
+\draw[bigarrow, <->] (browser) -- node[above] {\small HTTP/WebSocket} (network);
+\draw[bigarrow, <->] (network) -- node[above] {\small SSH Tunnel} node[below] {\small localhost:8888} (jupyter);
+
+% Better arrow routing on the right side
+\draw[arrow, <->] (jupyter.north) -- (kernel.south);
+\draw[arrow, <->] (jupyter.south) -- (files.north);
+
+% Labels
+\node[below=0.3cm of client-box, text width=6cm, align=center, font=\footnotesize] {
+    Access via: \texttt{localhost:9001}
+};
+
+\node[below=0.3cm of network, text width=7cm, align=center, font=\footnotesize] {
+    SSH command: \\\texttt{ssh -L 9001:localhost:8888 user@server}
+};
+
+\end{tikzpicture}
+
+\end{document}

@@ -1,0 +1,43 @@
+\documentclass[tikz]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{positioning, shapes.geometric, arrows.meta, shapes.misc}
+
+\begin{document}
+\begin{tikzpicture}[
+  node distance=1.5cm and 1cm,
+  windows/.style={rectangle, draw=blue, thick, fill=blue!10, rounded corners, text width=4cm, align=center, minimum height=1.2cm},
+  linux/.style={rectangle, draw=green!50!black, thick, fill=green!10, rounded corners, text width=4cm, align=center, minimum height=1.2cm},
+  rclbox/.style={rectangle, draw=black, thick, fill=gray!10, rounded corners, text width=4cm, align=center, minimum height=1.2cm},
+  cloudnode/.style={cloud, draw=orange!50!black, thick, fill=orange!10, text width=4cm, align=center, minimum height=1.2cm},
+  arrow/.style={->, thick}
+]
+
+% Local machines
+\node[windows] (windows) {Windows Laptop or Desktop};
+\node[linux, below=of windows] (wsl) {WSL (Linux on Windows)};
+\node[linux, below=of wsl] (linux) {Linux Machine};
+\node[rclbox, below=of linux, yshift=-1.5cm] (rcl) {RCL/HPC};
+\node[linux, left=of linux] (gpu) {Linux with GPU};
+\node[linux, below=of gpu] (gpnl) {GPNL GPU Node (DWD)};
+
+% Cloud nodes
+\node[cloudnode, right=of linux, xshift=0.5cm] (aws) {AWS EC2 / Virtual Host};
+\node[cloudnode, below=of aws] (ionos) {IONOS Virtual Host};
+\node[cloudnode, below=of ionos] (ewc) {EWC Virtual Machine};
+\node[cloudnode, above=of aws] (sagemaker) {AWS SageMaker};
+
+% Arrows
+\draw[arrow] (windows) -- (wsl);
+\draw[arrow] (wsl) -- (linux);
+\draw[arrow] (linux) -- (rcl);
+\draw[arrow] (linux) -- (gpu);
+\draw[arrow] (linux) -- (gpnl);
+
+\draw[arrow] (linux) -- (aws);
+\draw[arrow] (linux) -- (ionos.west);
+\draw[arrow] (linux) -- (sagemaker);
+\draw[arrow] (linux) -- (ewc.west);
+
+
+\end{tikzpicture}
+\end{document}
