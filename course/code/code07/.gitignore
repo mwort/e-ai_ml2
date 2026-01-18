@@ -1,0 +1,6 @@
+documents/
+vector_db/
+*.index
+*.faiss
+__pycache__/
+.ipynb_checkpoints/
